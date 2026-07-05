@@ -1,0 +1,21 @@
+{
+  "short_name": "CrunchOS",
+  "name": "CrunchOS - Smart QR Restaurant Operating System",
+  "icons": [
+    {
+      "src": "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=192&auto=format&fit=crop&q=60",
+      "type": "image/png",
+      "sizes": "192x192"
+    },
+    {
+      "src": "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=512&auto=format&fit=crop&q=60",
+      "type": "image/png",
+      "sizes": "512x512"
+    }
+  ],
+  "start_url": "/staff/login",
+  "background_color": "#09090b",
+  "theme_color": "#09090b",
+  "display": "standalone",
+  "orientation": "any"
+}

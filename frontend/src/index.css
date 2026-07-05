@@ -1,0 +1,105 @@
+@import "tailwindcss";
+
+:root {
+  --bg-primary: #FAFAFA;
+  --bg-card: #FFFFFF;
+  --brand-accent: #F97316;
+  --brand-accent-hover: #EA580C;
+  --brand-text-primary: #0F172A;
+  --brand-text-secondary: #475569;
+  --brand-border: #E2E8F0;
+
+  /* Glassmorphism variables for light mode */
+  --glass-bg: rgba(255, 255, 255, 0.7);
+  --glass-border: rgba(226, 232, 240, 0.6);
+  --glass-shadow: rgba(0, 0, 0, 0.05);
+}
+
+.dark {
+  --bg-primary: #0F172A;
+  --bg-card: #1E293B;
+  --brand-accent: #F97316;
+  --brand-accent-hover: #EA580C;
+  --brand-text-primary: #F8FAFC;
+  --brand-text-secondary: #94A3B8;
+  --brand-border: #334155;
+
+  /* Glassmorphism variables for dark mode */
+  --glass-bg: rgba(30, 41, 59, 0.75);
+  --glass-border: rgba(51, 65, 85, 0.5);
+  --glass-shadow: rgba(0, 0, 0, 0.3);
+}
+
+@theme {
+  --color-brand-dark: var(--bg-primary);
+  --color-brand-card: var(--bg-card);
+  --color-brand-border: var(--brand-border);
+  --color-brand-accent: var(--brand-accent);
+  --color-brand-accentHover: var(--brand-accent-hover);
+  --color-brand-textPrimary: var(--brand-text-primary);
+  --color-brand-textSecondary: var(--brand-text-secondary);
+  --color-brand-beige: var(--bg-card);
+  --color-brand-charcoal: var(--bg-primary);
+}
+
+@layer base {
+  body {
+    @apply bg-brand-dark text-brand-textPrimary font-sans antialiased;
+    scroll-behavior: smooth;
+    transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+  }
+}
+
+/* Glassmorphism custom classes */
+.glass-panel {
+  background: var(--glass-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--glass-border);
+  box-shadow: 0 4px 20px var(--glass-shadow);
+  border-radius: 0.75rem;
+}
+
+.glass-panel-light {
+  background: var(--glass-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--glass-border);
+  box-shadow: 0 4px 20px var(--glass-shadow);
+  border-radius: 0.75rem;
+}
+
+/* Hide scrollbar utility */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #09090b;
+}
+::-webkit-scrollbar-thumb {
+  background: #27272a;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #3f3f46;
+}
+
+/* Blink Alert Animation */
+@keyframes blink-border {
+  0%, 100% { border-color: rgba(249, 115, 22, 0.4); }
+  50% { border-color: rgba(249, 115, 22, 1); box-shadow: 0 0 10px rgba(249, 115, 22, 0.5); }
+}
+
+.animate-blink-orange {
+  animation: blink-border 1.5s infinite;
+}
