@@ -1,12 +1,18 @@
 import { Request, Response } from 'express';
 import { prisma } from '../config/db';
-import { OrderStatus, TableStatus } from '../types/enums';
+import { OrderStatus, TableStatus } from '@prisma/client';
 import { AuthenticatedRequest } from '../middleware/auth';
 import { notifyStaff, notifyOrderUpdate } from '../socket';
 
 // PUBLIC: Customer places an order
-export const createOrder = async (req: Request, res: Response) => {
-  const { tableId, restaurantId, items, notes } = req.body;
+export const createOrder = async (req: AuthenticatedRequest, res: Response) => {
+  let { tableId, restaurantId, items, notes } = req.body;
+
+  // Security: enforce verified tableId and restaurantId from JWT token for CUSTOMERs
+  if (req.user?.role === 'CUSTOMER') {
+    tableId = req.user.tableId;
+    restaurantId = req.user.restaurantId;
+  }
 
   if (!tableId || !restaurantId || !items || !Array.isArray(items) || items.length === 0) {
     return res.status(400).json({ error: 'Invalid order request parameters' });
@@ -25,6 +31,26 @@ export const createOrder = async (req: Request, res: Response) => {
     });
     if (!table || table.restaurantId !== restaurantId) {
       return res.status(404).json({ error: 'Table not found' });
+    }
+
+    // Get or create active session
+    let activeSessionId = req.user?.sessionId;
+    if (!activeSessionId) {
+      const activeSession = await prisma.tableSession.findFirst({
+        where: { tableId, isActive: true },
+      });
+      if (activeSession) {
+        activeSessionId = activeSession.id;
+      } else {
+        const newSession = await prisma.tableSession.create({
+          data: {
+            tableId,
+            restaurantId,
+            isActive: true,
+          },
+        });
+        activeSessionId = newSession.id;
+      }
     }
 
     // Calculate billing amounts based on DB prices to prevent tampering
@@ -68,8 +94,39 @@ export const createOrder = async (req: Request, res: Response) => {
     });
     const shortId = `#${(1001 + orderCountToday).toString()}`;
 
-    // Transaction to create order and update table status
+    // Transaction to create order, update inventory, and update table status
     const order = await prisma.$transaction(async (tx) => {
+      // 1. Deduct ingredient stock based on Recipe/BOM
+      for (const item of orderItemsToCreate) {
+        const recipeIngredients = await tx.menuItemIngredient.findMany({
+          where: { menuItemId: item.menuItemId },
+        });
+
+        for (const recipe of recipeIngredients) {
+          const qtyToDeduct = recipe.quantityUsed * item.quantity;
+          const updatedIngredient = await tx.inventoryItem.update({
+            where: { id: recipe.ingredientId },
+            data: {
+              quantity: {
+                decrement: qtyToDeduct,
+              },
+            },
+          });
+
+          // Check if below minStock and alert staff
+          if (updatedIngredient.quantity < updatedIngredient.minStock) {
+            notifyStaff(restaurantId, 'inventory:low_stock', {
+              id: updatedIngredient.id,
+              name: updatedIngredient.name,
+              quantity: updatedIngredient.quantity,
+              minStock: updatedIngredient.minStock,
+              unit: updatedIngredient.unit,
+            });
+          }
+        }
+      }
+
+      // 2. Create the order
       const dbOrder = await tx.order.create({
         data: {
           shortId,
@@ -80,6 +137,7 @@ export const createOrder = async (req: Request, res: Response) => {
           taxAmount,
           grandTotal,
           notes,
+          sessionId: activeSessionId,
           items: {
             create: orderItemsToCreate,
           },
@@ -94,7 +152,7 @@ export const createOrder = async (req: Request, res: Response) => {
         },
       });
 
-      // Mark Table as OCCUPIED
+      // 3. Mark Table status as OCCUPIED
       await tx.table.update({
         where: { id: tableId },
         data: { status: TableStatus.OCCUPIED },
@@ -103,7 +161,7 @@ export const createOrder = async (req: Request, res: Response) => {
       return dbOrder;
     });
 
-    // Write log
+    // Write activity log
     await prisma.activityLog.create({
       data: {
         action: 'New Order',
@@ -112,7 +170,7 @@ export const createOrder = async (req: Request, res: Response) => {
       },
     });
 
-    // Notify Staff Dashboard in Real-time (including sound alert trigger)
+    // Notify Staff Dashboard in Real-time
     notifyStaff(restaurantId, 'order:new', order);
 
     // Notify other staff about table status change

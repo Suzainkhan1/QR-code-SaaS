@@ -38,7 +38,7 @@ const db_1 = require("../config/db");
 const bcrypt = __importStar(require("bcryptjs"));
 const jwt = __importStar(require("jsonwebtoken"));
 const enums_1 = require("../types/enums");
-const JWT_SECRET = process.env.JWT_SECRET || 'crunchos_jwt_secret_key_2026_super_secure';
+const JWT_SECRET = process.env.JWT_SECRET;
 // Register a new Restaurant tenant & Owner User
 const register = async (req, res) => {
     return res.status(403).json({ error: 'Registration is disabled for this single-café MVP system.' });

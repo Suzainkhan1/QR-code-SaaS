@@ -3,6 +3,7 @@ import { prisma } from '../config/db';
 import { TableStatus } from '../types/enums';
 import { AuthenticatedRequest } from '../middleware/auth';
 import { notifyStaff } from '../socket';
+import * as jwt from 'jsonwebtoken';
 
 // PUBLIC: Verify Table by Table Number (for the single café)
 export const verifyTable = async (req: Request, res: Response) => {
@@ -46,6 +47,110 @@ export const verifyTable = async (req: Request, res: Response) => {
   }
 };
 
+// PUBLIC: Verify Signed QR Token and Issue Customer Session JWT
+export const verifyTableToken = async (req: Request, res: Response) => {
+  const { number, token } = req.body;
+
+  if (!number || !token) {
+    return res.status(400).json({ error: 'Table number and QR token are required' });
+  }
+
+  try {
+    const secret = process.env.JWT_SECRET!;
+    const decoded = jwt.verify(token, secret) as any;
+
+    if (decoded.number !== number || decoded.type !== 'qr') {
+      return res.status(403).json({ error: 'Invalid or tampered QR code token' });
+    }
+
+    const restaurant = await prisma.restaurant.findFirst();
+    if (!restaurant) {
+      return res.status(404).json({ error: 'Restaurant setup not found' });
+    }
+
+    const table = await prisma.table.findUnique({
+      where: {
+        restaurantId_number: {
+          restaurantId: restaurant.id,
+          number,
+        },
+      },
+    });
+
+    if (!table) {
+      return res.status(404).json({ error: `Table ${number} does not exist` });
+    }
+
+    // Find or create active TableSession
+    let session = await prisma.tableSession.findFirst({
+      where: {
+        tableId: table.id,
+        isActive: true,
+      },
+    });
+
+    let customerToken = '';
+
+    if (session) {
+      customerToken = session.token || '';
+    }
+
+    if (!session || !customerToken) {
+      session = await prisma.tableSession.create({
+        data: {
+          tableId: table.id,
+          restaurantId: restaurant.id,
+          isActive: true,
+          token: '',
+        },
+      });
+
+      customerToken = jwt.sign(
+        {
+          role: 'CUSTOMER',
+          tableId: table.id,
+          tableNumber: table.number,
+          restaurantId: restaurant.id,
+          sessionId: session.id,
+        },
+        secret,
+        { expiresIn: '6h' }
+      );
+
+      await prisma.tableSession.update({
+        where: { id: session.id },
+        data: { token: customerToken },
+      });
+
+      await prisma.table.update({
+        where: { id: table.id },
+        data: { status: 'OCCUPIED' },
+      });
+
+      notifyStaff(restaurant.id, 'table:update', { action: 'update', table: { ...table, status: 'OCCUPIED' } });
+    }
+
+    return res.json({
+      token: customerToken,
+      restaurant: {
+        id: restaurant.id,
+        name: restaurant.name,
+        slug: restaurant.slug,
+        taxRate: restaurant.taxRate,
+      },
+      table: {
+        id: table.id,
+        number: table.number,
+        status: table.status,
+      },
+      sessionId: session.id,
+    });
+  } catch (error) {
+    console.error('Table session verification error:', error);
+    return res.status(403).json({ error: 'QR verification failed or code has expired' });
+  }
+};
+
 // STAFF: Get all tables
 export const getTables = async (req: AuthenticatedRequest, res: Response) => {
   const restaurantId = req.user?.restaurantId;
@@ -58,9 +163,10 @@ export const getTables = async (req: AuthenticatedRequest, res: Response) => {
     });
 
     // Add QR code metadata URLs for printing
+    const secret = process.env.JWT_SECRET!;
     const tablesWithQR = tables.map((t) => {
-      // In production, this would be the actual domain.
-      const customerURL = `http://localhost:5173/table/${t.number}`;
+      const qrToken = jwt.sign({ number: t.number, type: 'qr' }, secret);
+      const customerURL = `http://localhost:5173/table/${t.number}?token=${qrToken}`;
       const qrURL = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(customerURL)}`;
       return {
         ...t,

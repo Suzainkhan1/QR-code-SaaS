@@ -1,5 +1,6 @@
 import { Server as SocketIOServer } from 'socket.io';
 import { Server as HTTPServer } from 'http';
+import * as jwt from 'jsonwebtoken';
 
 let io: SocketIOServer | null = null;
 
@@ -11,13 +12,46 @@ export const initSocket = (server: HTTPServer) => {
     },
   });
 
+  // Handshake authentication middleware
+  io.use((socket, next) => {
+    const token = socket.handshake.auth?.token || socket.handshake.headers['authorization'];
+    if (!token) {
+      return next(new Error('Authentication token is required'));
+    }
+
+    const cleanToken = token.startsWith('Bearer ') ? token.split(' ')[1] : token;
+
+    try {
+      const secret = process.env.JWT_SECRET!;
+      const decoded = jwt.verify(cleanToken, secret) as any;
+      socket.data = {
+        userId: decoded.id,
+        restaurantId: decoded.restaurantId,
+        role: decoded.role,
+        tableId: decoded.tableId,
+        sessionId: decoded.sessionId,
+      };
+      next();
+    } catch (err) {
+      return next(new Error('Authentication failed: invalid or expired token'));
+    }
+  });
+
   io.on('connection', (socket) => {
-    console.log(`[Socket] Connection established: ${socket.id}`);
+    console.log(`[Socket] Connection established: ${socket.id} (Role: ${socket.data.role})`);
 
     // Staff joins their restaurant control room
     socket.on('join_restaurant_staff', (restaurantId: string) => {
-      socket.join(`restaurant_${restaurantId}_staff`);
-      console.log(`[Socket] Staff ${socket.id} joined restaurant_${restaurantId}_staff`);
+      const verifiedRestaurantId = socket.data.restaurantId;
+      const verifiedRole = socket.data.role;
+
+      // Allow room subscription only if the user is verified staff
+      if (verifiedRole && ['OWNER', 'MANAGER', 'CASHIER', 'KITCHEN', 'WAITER', 'ADMIN'].includes(verifiedRole)) {
+        socket.join(`restaurant_${verifiedRestaurantId}_staff`);
+        console.log(`[Socket] Verified Staff ${socket.id} joined restaurant_${verifiedRestaurantId}_staff`);
+      } else {
+        console.warn(`[Socket Security Warning] Unauthorized subscription attempt by socket ${socket.id}`);
+      }
     });
 
     // Customer joins a room to track their specific order

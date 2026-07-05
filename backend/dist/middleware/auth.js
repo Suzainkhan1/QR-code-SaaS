@@ -42,7 +42,7 @@ const authenticateJWT = (req, res, next) => {
     }
     const token = authHeader.split(' ')[1];
     try {
-        const secret = process.env.JWT_SECRET || 'crunchos_jwt_secret_key_2026_super_secure';
+        const secret = process.env.JWT_SECRET;
         const decoded = jwt.verify(token, secret);
         req.user = {
             id: decoded.id,
@@ -50,6 +50,9 @@ const authenticateJWT = (req, res, next) => {
             role: decoded.role,
             restaurantId: decoded.restaurantId,
             name: decoded.name,
+            tableId: decoded.tableId,
+            tableNumber: decoded.tableNumber,
+            sessionId: decoded.sessionId,
         };
         next();
     }

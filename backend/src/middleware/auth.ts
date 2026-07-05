@@ -6,9 +6,12 @@ export interface AuthenticatedRequest extends Request {
   user?: {
     id: string;
     email: string;
-    role: Role;
+    role: Role | 'CUSTOMER';
     restaurantId: string;
     name: string;
+    tableId?: string;
+    tableNumber?: string;
+    sessionId?: string;
   };
 }
 
@@ -22,7 +25,7 @@ export const authenticateJWT = (req: AuthenticatedRequest, res: Response, next: 
   const token = authHeader.split(' ')[1];
 
   try {
-    const secret = process.env.JWT_SECRET || 'crunchos_jwt_secret_key_2026_super_secure';
+    const secret = process.env.JWT_SECRET!;
     const decoded = jwt.verify(token, secret) as any;
     req.user = {
       id: decoded.id,
@@ -30,6 +33,9 @@ export const authenticateJWT = (req: AuthenticatedRequest, res: Response, next: 
       role: decoded.role,
       restaurantId: decoded.restaurantId,
       name: decoded.name,
+      tableId: decoded.tableId,
+      tableNumber: decoded.tableNumber,
+      sessionId: decoded.sessionId,
     };
     next();
   } catch (error) {
@@ -43,7 +49,7 @@ export const requireRoles = (...roles: Role[]) => {
       return res.status(401).json({ error: 'Unauthorized user context' });
     }
 
-    if (!roles.includes(req.user.role)) {
+    if (!roles.includes(req.user.role as Role)) {
       return res.status(403).json({ error: 'Access denied: insufficient operational role permissions' });
     }
 

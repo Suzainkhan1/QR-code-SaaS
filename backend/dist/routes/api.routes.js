@@ -1,8 +1,14 @@
 "use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const enums_1 = require("../types/enums");
 const auth_1 = require("../middleware/auth");
+const express_rate_limit_1 = __importDefault(require("express-rate-limit"));
+const validate_1 = require("../middleware/validate");
+const schemas_1 = require("../types/schemas");
 // Controller Imports
 const auth_controller_1 = require("../controllers/auth.controller");
 const menu_controller_1 = require("../controllers/menu.controller");
@@ -16,19 +22,35 @@ const expense_controller_1 = require("../controllers/expense.controller");
 const settings_controller_1 = require("../controllers/settings.controller");
 const log_controller_1 = require("../controllers/log.controller");
 const router = (0, express_1.Router)();
+// Rate Limiters Configuration
+const loginLimiter = (0, express_rate_limit_1.default)({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 10,
+    message: { error: 'Too many login attempts. Please try again after 15 minutes.' },
+    standardHeaders: true,
+    legacyHeaders: false,
+});
+const publicApiLimiter = (0, express_rate_limit_1.default)({
+    windowMs: 5 * 60 * 1000, // 5 minutes
+    max: 30,
+    message: { error: 'Too many requests from this device. Please try again after 5 minutes.' },
+    standardHeaders: true,
+    legacyHeaders: false,
+});
 // ==========================================
 // 1. PUBLIC CUSTOMER ENDPOINTS
 // ==========================================
 router.get('/public/menu', menu_controller_1.getMenuBySlug);
 router.get('/public/tables/:number', table_controller_1.verifyTable);
-router.post('/public/orders', order_controller_1.createOrder);
+router.post('/public/tables/verify', publicApiLimiter, table_controller_1.verifyTableToken);
+router.post('/public/orders', publicApiLimiter, auth_1.authenticateJWT, (0, validate_1.validateBody)(schemas_1.placeOrderSchema), order_controller_1.createOrder);
 router.get('/public/orders/:id', order_controller_1.getCustomerOrderStatus);
-router.post('/public/requests', request_controller_1.createRequest);
+router.post('/public/requests', publicApiLimiter, auth_1.authenticateJWT, (0, validate_1.validateBody)(schemas_1.staffRequestSchema), request_controller_1.createRequest);
 // ==========================================
 // 2. STAFF AUTHENTICATION & MANAGEMENT
 // ==========================================
 router.post('/auth/register', auth_controller_1.register);
-router.post('/auth/login', auth_controller_1.login);
+router.post('/auth/login', loginLimiter, (0, validate_1.validateBody)(schemas_1.loginSchema), auth_controller_1.login);
 router.get('/auth/me', auth_1.authenticateJWT, auth_controller_1.me);
 // Staff Accounts CRUD (Owner / Manager level)
 router.post('/auth/staff', auth_1.authenticateJWT, (0, auth_1.requireRoles)(enums_1.Role.OWNER, enums_1.Role.MANAGER), auth_controller_1.addStaff);
@@ -38,11 +60,11 @@ router.delete('/auth/staff/:id', auth_1.authenticateJWT, (0, auth_1.requireRoles
 // 3. MENU MANAGEMENT
 // ==========================================
 router.get('/menu/categories', auth_1.authenticateJWT, menu_controller_1.getCategories);
-router.post('/menu/categories', auth_1.authenticateJWT, (0, auth_1.requireRoles)(enums_1.Role.OWNER, enums_1.Role.MANAGER), menu_controller_1.addCategory);
-router.put('/menu/categories/:id', auth_1.authenticateJWT, (0, auth_1.requireRoles)(enums_1.Role.OWNER, enums_1.Role.MANAGER), menu_controller_1.updateCategory);
+router.post('/menu/categories', auth_1.authenticateJWT, (0, auth_1.requireRoles)(enums_1.Role.OWNER, enums_1.Role.MANAGER), (0, validate_1.validateBody)(schemas_1.categorySchema), menu_controller_1.addCategory);
+router.put('/menu/categories/:id', auth_1.authenticateJWT, (0, auth_1.requireRoles)(enums_1.Role.OWNER, enums_1.Role.MANAGER), (0, validate_1.validateBody)(schemas_1.categorySchema), menu_controller_1.updateCategory);
 router.delete('/menu/categories/:id', auth_1.authenticateJWT, (0, auth_1.requireRoles)(enums_1.Role.OWNER), menu_controller_1.deleteCategory);
-router.post('/menu/items', auth_1.authenticateJWT, (0, auth_1.requireRoles)(enums_1.Role.OWNER, enums_1.Role.MANAGER), menu_controller_1.addItem);
-router.put('/menu/items/:id', auth_1.authenticateJWT, (0, auth_1.requireRoles)(enums_1.Role.OWNER, enums_1.Role.MANAGER), menu_controller_1.updateItem);
+router.post('/menu/items', auth_1.authenticateJWT, (0, auth_1.requireRoles)(enums_1.Role.OWNER, enums_1.Role.MANAGER), (0, validate_1.validateBody)(schemas_1.menuItemSchema), menu_controller_1.addItem);
+router.put('/menu/items/:id', auth_1.authenticateJWT, (0, auth_1.requireRoles)(enums_1.Role.OWNER, enums_1.Role.MANAGER), (0, validate_1.validateBody)(schemas_1.menuItemSchema), menu_controller_1.updateItem);
 router.delete('/menu/items/:id', auth_1.authenticateJWT, (0, auth_1.requireRoles)(enums_1.Role.OWNER), menu_controller_1.deleteItem);
 // ==========================================
 // 4. TABLE MANAGEMENT
@@ -65,8 +87,8 @@ router.put('/requests/:id/resolve', auth_1.authenticateJWT, request_controller_1
 // 7. BILLING & PHYSICAL SETTLEMENT
 // ==========================================
 router.get('/billing/summary/:tableId', auth_1.authenticateJWT, billing_controller_1.getTableBillSummary);
-router.post('/billing/checkout', auth_1.authenticateJWT, billing_controller_1.checkoutTable);
-router.put('/billing/:id/pay', auth_1.authenticateJWT, billing_controller_1.payBill);
+router.post('/billing/checkout', auth_1.authenticateJWT, (0, auth_1.requireRoles)(enums_1.Role.OWNER, enums_1.Role.MANAGER, enums_1.Role.CASHIER), (0, validate_1.validateBody)(schemas_1.checkoutSchema), billing_controller_1.checkoutTable);
+router.put('/billing/:id/pay', auth_1.authenticateJWT, (0, auth_1.requireRoles)(enums_1.Role.OWNER, enums_1.Role.MANAGER, enums_1.Role.CASHIER), billing_controller_1.payBill);
 // ==========================================
 // 8. FINANCIAL ANALYTICS
 // ==========================================
@@ -75,14 +97,14 @@ router.get('/analytics', auth_1.authenticateJWT, (0, auth_1.requireRoles)(enums_
 // 9. INVENTORY MANAGEMENT
 // ==========================================
 router.get('/inventory', auth_1.authenticateJWT, inventory_controller_1.getInventory);
-router.post('/inventory', auth_1.authenticateJWT, inventory_controller_1.addIngredient);
-router.put('/inventory/:id', auth_1.authenticateJWT, inventory_controller_1.updateIngredient);
+router.post('/inventory', auth_1.authenticateJWT, (0, validate_1.validateBody)(schemas_1.inventoryItemSchema), inventory_controller_1.addIngredient);
+router.put('/inventory/:id', auth_1.authenticateJWT, (0, validate_1.validateBody)(schemas_1.inventoryItemSchema), inventory_controller_1.updateIngredient);
 router.delete('/inventory/:id', auth_1.authenticateJWT, inventory_controller_1.deleteIngredient);
 // ==========================================
 // 10. EXPENSE MANAGER
 // ==========================================
 router.get('/expenses', auth_1.authenticateJWT, expense_controller_1.getExpenses);
-router.post('/expenses', auth_1.authenticateJWT, expense_controller_1.addExpense);
+router.post('/expenses', auth_1.authenticateJWT, (0, validate_1.validateBody)(schemas_1.expenseSchema), expense_controller_1.addExpense);
 router.delete('/expenses/:id', auth_1.authenticateJWT, expense_controller_1.deleteExpense);
 // ==========================================
 // 11. RESTAURANT SETTINGS & AUDIT LOGS

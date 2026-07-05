@@ -9,6 +9,11 @@ import swaggerJsdoc from 'swagger-jsdoc';
 // Configurations
 dotenv.config();
 
+if (!process.env.JWT_SECRET) {
+  console.error('[CRITICAL ERROR] JWT_SECRET is not configured! Failing fast.');
+  process.exit(1);
+}
+
 // Imports
 import apiRouter from './routes/api.routes';
 import { initSocket } from './socket';

@@ -12,6 +12,10 @@ const swagger_ui_express_1 = __importDefault(require("swagger-ui-express"));
 const swagger_jsdoc_1 = __importDefault(require("swagger-jsdoc"));
 // Configurations
 dotenv_1.default.config();
+if (!process.env.JWT_SECRET) {
+    console.error('[CRITICAL ERROR] JWT_SECRET is not configured! Failing fast.');
+    process.exit(1);
+}
 // Imports
 const api_routes_1 = __importDefault(require("./routes/api.routes"));
 const socket_1 = require("./socket");

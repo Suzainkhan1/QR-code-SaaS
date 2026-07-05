@@ -2,7 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.payBill = exports.checkoutTable = exports.getTableBillSummary = void 0;
 const db_1 = require("../config/db");
-const enums_1 = require("../types/enums");
+const client_1 = require("@prisma/client");
 const socket_1 = require("../socket");
 // STAFF: Get active, unpaid orders summary for a table
 const getTableBillSummary = async (req, res) => {
@@ -17,30 +17,28 @@ const getTableBillSummary = async (req, res) => {
         if (!table) {
             return res.status(404).json({ error: 'Table not found' });
         }
-        // Find all active orders for this table that have no bill or whose bill is unpaid
-        const activeOrders = await db_1.prisma.order.findMany({
-            where: {
-                tableId,
-                restaurantId,
-                status: { not: 'CANCELLED' },
-                bill: null, // Orders that are not yet billed
-            },
+        // Find active session for this table
+        const activeSession = await db_1.prisma.tableSession.findFirst({
+            where: { tableId, isActive: true, restaurantId },
             include: {
-                items: {
-                    include: { menuItem: true },
+                orders: {
+                    where: { status: { not: 'CANCELLED' } },
+                    include: {
+                        items: { include: { menuItem: true } },
+                    },
                 },
             },
         });
-        if (activeOrders.length === 0) {
+        if (!activeSession) {
             // Check if there is an existing unpaid bill
             const existingUnpaidBill = await db_1.prisma.bill.findFirst({
                 where: {
                     restaurantId,
                     isPaid: false,
-                    order: { tableId },
+                    session: { tableId },
                 },
                 include: {
-                    order: {
+                    orders: {
                         include: {
                             items: { include: { menuItem: true } },
                         },
@@ -50,7 +48,7 @@ const getTableBillSummary = async (req, res) => {
             if (existingUnpaidBill) {
                 return res.json({
                     bill: existingUnpaidBill,
-                    orders: [existingUnpaidBill.order],
+                    orders: existingUnpaidBill.orders,
                     subTotal: existingUnpaidBill.subTotal,
                     tax: existingUnpaidBill.tax,
                     discount: existingUnpaidBill.discount,
@@ -62,10 +60,10 @@ const getTableBillSummary = async (req, res) => {
         const restaurant = await db_1.prisma.restaurant.findUnique({
             where: { id: restaurantId },
         });
-        // Sum details
+        // Sum details from the active session orders
         let subTotal = 0;
         const itemsList = [];
-        activeOrders.forEach((order) => {
+        activeSession.orders.forEach((order) => {
             order.items.forEach((item) => {
                 subTotal += item.price * item.quantity;
                 itemsList.push({
@@ -80,12 +78,13 @@ const getTableBillSummary = async (req, res) => {
         const tax = Math.round(subTotal * ((restaurant?.taxRate || 5.0) / 100) * 100) / 100;
         const grandTotal = subTotal + tax;
         return res.json({
-            orders: activeOrders,
+            orders: activeSession.orders,
             items: itemsList,
             subTotal,
             tax,
             grandTotal,
             taxRate: restaurant?.taxRate || 5.0,
+            sessionId: activeSession.id,
         });
     }
     catch (error) {
@@ -96,102 +95,75 @@ const getTableBillSummary = async (req, res) => {
 exports.getTableBillSummary = getTableBillSummary;
 // STAFF: Generate Bill (Checkout)
 const checkoutTable = async (req, res) => {
-    const { tableId } = req.body;
-    const { discount } = req.body; // optional discount value
+    const { tableId, discount } = req.body;
     const restaurantId = req.user?.restaurantId;
     if (!restaurantId)
         return res.status(401).json({ error: 'Unauthorized' });
     if (!tableId)
         return res.status(400).json({ error: 'Table ID is required' });
     try {
-        // Gather all active orders for this table that aren't cancelled or billed
-        const orders = await db_1.prisma.order.findMany({
-            where: {
-                tableId,
-                restaurantId,
-                status: { not: 'CANCELLED' },
-                bill: null,
+        const restaurant = await db_1.prisma.restaurant.findUnique({
+            where: { id: restaurantId },
+        });
+        if (!restaurant) {
+            return res.status(404).json({ error: 'Restaurant not found' });
+        }
+        // Find active session with active orders
+        const activeSession = await db_1.prisma.tableSession.findFirst({
+            where: { tableId, isActive: true, restaurantId },
+            include: {
+                orders: {
+                    where: { status: { not: 'CANCELLED' } },
+                },
             },
         });
-        if (orders.length === 0) {
-            return res.status(400).json({ error: 'No active orders found to check out' });
+        if (!activeSession || activeSession.orders.length === 0) {
+            return res.status(400).json({ error: 'No active session or orders found to check out' });
         }
-        // We merge these orders under a master order or bill the first/latest active order
-        // In our simplified database schema, Bill maps 1-to-1 with an Order.
-        // For tables with multiple orders, we can update the first order to contain the combined total
-        // and link the Bill to it, or merge them. Let's merge them:
-        // We update the main order (the first order) with the combined values, delete/cancel secondary orders, or link the bill to the latest order.
-        // To make it Prisma-friendly without schema breakage, we will merge the items of all orders into the first order,
-        // and delete the secondary orders, keeping the invoice linked to a single complete Order record!
-        // This is a brilliant, self-healing database pattern.
-        const mainOrder = orders[0];
-        const secondaryOrders = orders.slice(1);
-        const mergedOrder = await db_1.prisma.$transaction(async (tx) => {
-            // 1. Move items of secondary orders to the main order
-            for (const secOrder of secondaryOrders) {
-                await tx.orderItem.updateMany({
-                    where: { orderId: secOrder.id },
-                    data: { orderId: mainOrder.id },
-                });
-                // Delete secondary order
-                await tx.order.delete({
-                    where: { id: secOrder.id },
-                });
-            }
-            // 2. Recalculate main order total
-            const allItems = await tx.orderItem.findMany({
-                where: { orderId: mainOrder.id },
-            });
-            const subTotal = allItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
-            const rest = await tx.restaurant.findUnique({ where: { id: restaurantId } });
-            const taxRate = rest?.taxRate || 5.0;
-            const tax = Math.round(subTotal * (taxRate / 100) * 100) / 100;
-            const discountAmt = discount ? parseFloat(discount) : 0.0;
-            const grandTotal = Math.max(0, subTotal + tax - discountAmt);
-            const updatedOrder = await tx.order.update({
-                where: { id: mainOrder.id },
-                data: {
-                    totalAmount: subTotal,
-                    taxAmount: tax,
-                    discountAmount: discountAmt,
-                    grandTotal: grandTotal,
-                    status: 'READY', // Move to ready/finished
-                },
-            });
-            // 3. Generate unique invoice number
+        const subTotal = activeSession.orders.reduce((sum, o) => sum + o.totalAmount, 0);
+        const tax = Math.round(subTotal * (restaurant.taxRate / 100) * 100) / 100;
+        const discountAmt = Math.min(discount ? parseFloat(discount) : 0.0, subTotal);
+        const grandTotal = Math.max(0, subTotal + tax - discountAmt);
+        const checkoutResult = await db_1.prisma.$transaction(async (tx) => {
+            // 1. Generate unique invoice number
             const billCount = await tx.bill.count({ where: { restaurantId } });
             const invoiceNo = `INV-${(5001 + billCount).toString()}`;
-            // 4. Create Bill record
+            // 2. Create the Bill
             const bill = await tx.bill.create({
                 data: {
                     invoiceNo,
-                    orderId: mainOrder.id,
                     restaurantId,
                     subTotal,
                     tax,
                     discount: discountAmt,
                     grandTotal,
+                    sessionId: activeSession.id,
+                    paymentMethod: 'CASH',
                     isPaid: false,
                 },
             });
-            // 5. Set Table status to BILLING
+            // 3. Link all orders in session to this Bill
+            await tx.order.updateMany({
+                where: { sessionId: activeSession.id },
+                data: { billId: bill.id },
+            });
+            // 4. Set Table status to BILLING
             const updatedTable = await tx.table.update({
                 where: { id: tableId },
-                data: { status: enums_1.TableStatus.BILLING },
+                data: { status: client_1.TableStatus.BILLING },
             });
-            return { bill, order: updatedOrder, table: updatedTable };
+            return { bill, table: updatedTable };
         });
         await db_1.prisma.activityLog.create({
             data: {
                 action: 'Bill Generated',
-                details: `Invoice ${mergedOrder.bill.invoiceNo} generated for Table ${mergedOrder.table.number}`,
+                details: `Invoice ${checkoutResult.bill.invoiceNo} generated for Table`,
                 restaurantId,
             },
         });
-        // Notify staff
-        (0, socket_1.notifyStaff)(restaurantId, 'table:update', { action: 'update', table: mergedOrder.table });
-        (0, socket_1.notifyStaff)(restaurantId, 'billing:update', { action: 'checkout', bill: mergedOrder.bill });
-        return res.status(201).json(mergedOrder);
+        (0, socket_1.notifyStaff)(restaurantId, 'table:update', { action: 'update', table: checkoutResult.table });
+        (0, socket_1.notifyStaff)(restaurantId, 'billing:update', { action: 'checkout', bill: checkoutResult.bill });
+        return res.status(201).json(checkoutResult);
     }
     catch (error) {
         console.error('Checkout error:', error);
@@ -201,8 +173,8 @@ const checkoutTable = async (req, res) => {
 exports.checkoutTable = checkoutTable;
 // STAFF: Mark Bill as Paid
 const payBill = async (req, res) => {
-    const { id } = req.params; // Bill ID
-    const { paymentMethod } = req.body; // CASH, UPI, CARD
+    const { id } = req.params;
+    const { paymentMethod } = req.body;
     const restaurantId = req.user?.restaurantId;
     if (!restaurantId)
         return res.status(401).json({ error: 'Unauthorized' });
@@ -211,7 +183,6 @@ const payBill = async (req, res) => {
     try {
         const bill = await db_1.prisma.bill.findFirst({
             where: { id, restaurantId },
-            include: { order: true },
         });
         if (!bill) {
             return res.status(404).json({ error: 'Bill invoice not found' });
@@ -229,17 +200,29 @@ const payBill = async (req, res) => {
                     paidAt: new Date(),
                 },
             });
-            // 2. Mark associated Order as Delivered (Completed)
-            await tx.order.update({
-                where: { id: bill.orderId },
-                data: { status: 'DELIVERED' },
+            // 2. Mark all orders in the TableSession as DELIVERED
+            if (bill.sessionId) {
+                await tx.order.updateMany({
+                    where: { sessionId: bill.sessionId },
+                    data: { status: 'DELIVERED' },
+                });
+                // 3. Deactivate the TableSession
+                await tx.tableSession.update({
+                    where: { id: bill.sessionId },
+                    data: { isActive: false },
+                });
+            }
+            // 4. Mark Table as AVAILABLE (since bill is settled)
+            const session = await tx.tableSession.findUnique({
+                where: { id: bill.sessionId || '' },
             });
-            // 3. Mark Table as AVAILABLE (since bill is settled)
-            const updatedTable = await tx.table.update({
-                where: { id: bill.order.tableId },
-                data: { status: enums_1.TableStatus.AVAILABLE },
-            });
-            // 4. Log Activity
+            let updatedTable = null;
+            if (session) {
+                updatedTable = await tx.table.update({
+                    where: { id: session.tableId },
+                    data: { status: client_1.TableStatus.AVAILABLE },
+                });
+            }
             await tx.activityLog.create({
                 data: {
                     action: 'Bill Settled',
@@ -249,8 +232,9 @@ const payBill = async (req, res) => {
             });
             return { bill: updatedBill, table: updatedTable };
         });
-        // Notify staff dashboard (sync tables & financial records)
-        (0, socket_1.notifyStaff)(restaurantId, 'table:update', { action: 'update', table: result.table });
+        if (result.table) {
+            (0, socket_1.notifyStaff)(restaurantId, 'table:update', { action: 'update', table: result.table });
+        }
         (0, socket_1.notifyStaff)(restaurantId, 'billing:update', { action: 'pay', bill: result.bill });
         return res.json({ message: 'Invoice paid and table settled successfully', ...result });
     }

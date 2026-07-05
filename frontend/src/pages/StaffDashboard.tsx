@@ -30,6 +30,8 @@ import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, R
 import { useAuth } from '../shared/hooks/useAuth';
 import { socketService } from '../shared/services/socket';
 import ThemeToggle from '../shared/components/ThemeToggle';
+import AnalyticsView from './dashboard/AnalyticsView';
+import LogsView from './dashboard/LogsView';
 
 type TabType = 'orders' | 'billing' | 'tables' | 'menu' | 'requests' | 'analytics' | 'inventory' | 'expenses' | 'settings' | 'logs';
 
@@ -1425,64 +1427,7 @@ export default function StaffDashboard() {
               TAB: FINANCIAL ANALYTICS
               ================================================================ */}
           {activeTab === 'analytics' && (
-            <div>
-              <h2 className="text-xl font-bold text-brand-textPrimary mb-6">Financial performance & SaaS analytics</h2>
-
-              {/* Statistics Row */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-8">
-                {[
-                  { label: "Today's Revenue", val: `₹${analytics.summary.todayRevenue}`, desc: "UPI, cash, card settlements" },
-                  { label: "Net Profit", val: `₹${analytics.summary.netProfit}`, desc: `Margin: ${analytics.summary.profitMargin}%` },
-                  { label: "Gross Profit", val: `₹${analytics.summary.grossProfit}`, desc: "Calculated margins" },
-                  { label: "Average Bill Value", val: `₹${analytics.summary.averageOrderValue}`, desc: "Total customer spend" },
-                ].map((stat, idx) => (
-                  <div key={idx} className="bg-brand-card border border-zinc-850 p-5 rounded-2xl flex flex-col gap-2 relative overflow-hidden">
-                    <span className="text-[10px] font-bold tracking-wider text-brand-accent uppercase">{stat.label}</span>
-                    <h3 className="text-2xl font-extrabold text-white">{stat.val}</h3>
-                    <p className="text-[10px] text-brand-textSecondary mt-1">{stat.desc}</p>
-                  </div>
-                ))}
-              </div>
-
-              {/* Recharts Graphical charts */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                {/* Chart 1: Daily Revenue */}
-                <div className="bg-brand-card border border-zinc-850 p-6 rounded-2xl">
-                  <h3 className="text-sm font-bold text-brand-accent uppercase tracking-wider mb-4">
-                    7-Day Revenue Trend (₹)
-                  </h3>
-                  <div className="h-64">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={analytics.dailyRevenueGraph}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
-                        <XAxis dataKey="date" stroke="#a1a1aa" fontSize={10} />
-                        <YAxis stroke="#a1a1aa" fontSize={10} />
-                        <Tooltip contentStyle={{ backgroundColor: '#18181b', borderColor: '#27272a' }} />
-                        <Line type="monotone" dataKey="revenue" stroke="#f97316" strokeWidth={3} dot={{ r: 4 }} activeDot={{ r: 6 }} />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-
-                {/* Chart 2: Category Sales */}
-                <div className="bg-brand-card border border-zinc-850 p-6 rounded-2xl">
-                  <h3 className="text-sm font-bold text-brand-accent uppercase tracking-wider mb-4">
-                    Category Distribution Sales (₹)
-                  </h3>
-                  <div className="h-64">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={analytics.categorySales}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
-                        <XAxis dataKey="name" stroke="#a1a1aa" fontSize={10} />
-                        <YAxis stroke="#a1a1aa" fontSize={10} />
-                        <Tooltip contentStyle={{ backgroundColor: '#18181b', borderColor: '#27272a' }} />
-                        <Bar dataKey="value" fill="#f97316" radius={[4, 4, 0, 0]} />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-              </div>
-            </div>
+            <AnalyticsView analytics={analytics} />
           )}
 
           {/* ================================================================
@@ -1847,33 +1792,7 @@ export default function StaffDashboard() {
               TAB: SYSTEM ACTIVITY LOGS
               ================================================================ */}
           {activeTab === 'logs' && (
-            <div>
-              <h2 className="text-xl font-bold text-brand-textPrimary mb-2">Audit trail & system logs</h2>
-              <p className="text-xs text-brand-textSecondary mb-6">Auditable chronological ledger of operational actions</p>
-
-              <div className="bg-brand-card border border-zinc-850 rounded-2xl overflow-hidden max-h-[600px] overflow-y-auto">
-                <table className="w-full text-left text-xs border-collapse">
-                  <thead>
-                    <tr className="bg-zinc-950 border-b border-zinc-850 text-zinc-400 uppercase text-[10px] sticky top-0">
-                      <th className="p-4">Action</th>
-                      <th className="p-4">Details</th>
-                      <th className="p-4 text-right">Timestamp</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {activityLogs.map((log) => (
-                      <tr key={log.id} className="border-b border-zinc-850/60 text-brand-textPrimary hover:bg-zinc-900/10">
-                        <td className="p-4 font-bold text-brand-accent">{log.action}</td>
-                        <td className="p-4 text-brand-textSecondary">{log.details}</td>
-                        <td className="p-4 text-right font-mono text-zinc-500">
-                          {new Date(log.createdAt).toLocaleString()}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
+            <LogsView activityLogs={activityLogs} />
           )}
         </div>
       </main>

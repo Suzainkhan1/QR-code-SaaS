@@ -1,11 +1,23 @@
 import { Router } from 'express';
 import { Role } from '../types/enums';
 import { authenticateJWT, requireRoles } from '../middleware/auth';
+import rateLimit from 'express-rate-limit';
+import { validateBody } from '../middleware/validate';
+import {
+  loginSchema,
+  placeOrderSchema,
+  staffRequestSchema,
+  categorySchema,
+  menuItemSchema,
+  inventoryItemSchema,
+  expenseSchema,
+  checkoutSchema,
+} from '../types/schemas';
 
 // Controller Imports
 import { register, login, me, addStaff, getStaff, deleteStaff } from '../controllers/auth.controller';
 import { getMenuBySlug, getCategories, addCategory, updateCategory, deleteCategory, addItem, updateItem, deleteItem } from '../controllers/menu.controller';
-import { verifyTable, getTables, addTable, updateTableStatus, deleteTable } from '../controllers/table.controller';
+import { verifyTable, verifyTableToken, getTables, addTable, updateTableStatus, deleteTable } from '../controllers/table.controller';
 import { createOrder, getCustomerOrderStatus, getOrders, updateOrderStatus } from '../controllers/order.controller';
 import { createRequest, getRequests, resolveRequest } from '../controllers/request.controller';
 import { getTableBillSummary, checkoutTable, payBill } from '../controllers/billing.controller';
@@ -17,20 +29,38 @@ import { getActivityLogs } from '../controllers/log.controller';
 
 const router = Router();
 
+// Rate Limiters Configuration
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10,
+  message: { error: 'Too many login attempts. Please try again after 15 minutes.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const publicApiLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000, // 5 minutes
+  max: 30,
+  message: { error: 'Too many requests from this device. Please try again after 5 minutes.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 // ==========================================
 // 1. PUBLIC CUSTOMER ENDPOINTS
 // ==========================================
 router.get('/public/menu', getMenuBySlug);
 router.get('/public/tables/:number', verifyTable);
-router.post('/public/orders', createOrder);
+router.post('/public/tables/verify', publicApiLimiter, verifyTableToken);
+router.post('/public/orders', publicApiLimiter, authenticateJWT, validateBody(placeOrderSchema), createOrder);
 router.get('/public/orders/:id', getCustomerOrderStatus);
-router.post('/public/requests', createRequest);
+router.post('/public/requests', publicApiLimiter, authenticateJWT, validateBody(staffRequestSchema), createRequest);
 
 // ==========================================
 // 2. STAFF AUTHENTICATION & MANAGEMENT
 // ==========================================
 router.post('/auth/register', register);
-router.post('/auth/login', login);
+router.post('/auth/login', loginLimiter, validateBody(loginSchema), login);
 router.get('/auth/me', authenticateJWT, me);
 
 // Staff Accounts CRUD (Owner / Manager level)
@@ -42,12 +72,12 @@ router.delete('/auth/staff/:id', authenticateJWT, requireRoles(Role.OWNER), dele
 // 3. MENU MANAGEMENT
 // ==========================================
 router.get('/menu/categories', authenticateJWT, getCategories);
-router.post('/menu/categories', authenticateJWT, requireRoles(Role.OWNER, Role.MANAGER), addCategory);
-router.put('/menu/categories/:id', authenticateJWT, requireRoles(Role.OWNER, Role.MANAGER), updateCategory);
+router.post('/menu/categories', authenticateJWT, requireRoles(Role.OWNER, Role.MANAGER), validateBody(categorySchema), addCategory);
+router.put('/menu/categories/:id', authenticateJWT, requireRoles(Role.OWNER, Role.MANAGER), validateBody(categorySchema), updateCategory);
 router.delete('/menu/categories/:id', authenticateJWT, requireRoles(Role.OWNER), deleteCategory);
 
-router.post('/menu/items', authenticateJWT, requireRoles(Role.OWNER, Role.MANAGER), addItem);
-router.put('/menu/items/:id', authenticateJWT, requireRoles(Role.OWNER, Role.MANAGER), updateItem);
+router.post('/menu/items', authenticateJWT, requireRoles(Role.OWNER, Role.MANAGER), validateBody(menuItemSchema), addItem);
+router.put('/menu/items/:id', authenticateJWT, requireRoles(Role.OWNER, Role.MANAGER), validateBody(menuItemSchema), updateItem);
 router.delete('/menu/items/:id', authenticateJWT, requireRoles(Role.OWNER), deleteItem);
 
 // ==========================================
@@ -74,8 +104,8 @@ router.put('/requests/:id/resolve', authenticateJWT, resolveRequest);
 // 7. BILLING & PHYSICAL SETTLEMENT
 // ==========================================
 router.get('/billing/summary/:tableId', authenticateJWT, getTableBillSummary);
-router.post('/billing/checkout', authenticateJWT, checkoutTable);
-router.put('/billing/:id/pay', authenticateJWT, payBill);
+router.post('/billing/checkout', authenticateJWT, requireRoles(Role.OWNER, Role.MANAGER, Role.CASHIER), validateBody(checkoutSchema), checkoutTable);
+router.put('/billing/:id/pay', authenticateJWT, requireRoles(Role.OWNER, Role.MANAGER, Role.CASHIER), payBill);
 
 // ==========================================
 // 8. FINANCIAL ANALYTICS
@@ -86,15 +116,15 @@ router.get('/analytics', authenticateJWT, requireRoles(Role.OWNER, Role.MANAGER)
 // 9. INVENTORY MANAGEMENT
 // ==========================================
 router.get('/inventory', authenticateJWT, getInventory);
-router.post('/inventory', authenticateJWT, addIngredient);
-router.put('/inventory/:id', authenticateJWT, updateIngredient);
+router.post('/inventory', authenticateJWT, validateBody(inventoryItemSchema), addIngredient);
+router.put('/inventory/:id', authenticateJWT, validateBody(inventoryItemSchema), updateIngredient);
 router.delete('/inventory/:id', authenticateJWT, deleteIngredient);
 
 // ==========================================
 // 10. EXPENSE MANAGER
 // ==========================================
 router.get('/expenses', authenticateJWT, getExpenses);
-router.post('/expenses', authenticateJWT, addExpense);
+router.post('/expenses', authenticateJWT, validateBody(expenseSchema), addExpense);
 router.delete('/expenses/:id', authenticateJWT, deleteExpense);
 
 // ==========================================

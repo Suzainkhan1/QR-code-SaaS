@@ -5,7 +5,7 @@ import * as jwt from 'jsonwebtoken';
 import { Role, TableStatus } from '../types/enums';
 import { AuthenticatedRequest } from '../middleware/auth';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'crunchos_jwt_secret_key_2026_super_secure';
+const JWT_SECRET = process.env.JWT_SECRET!;
 
 // Register a new Restaurant tenant & Owner User
 export const register = async (req: AuthenticatedRequest, res: Response) => {

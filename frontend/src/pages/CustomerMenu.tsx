@@ -90,17 +90,37 @@ export default function CustomerMenu() {
     const initPage = async () => {
       try {
         setLoading(true);
-        // 1. Verify Table
-        const tableRes = await fetch(`http://localhost:5000/api/public/tables/${tableNumber}`);
-        if (!tableRes.ok) {
-          throw new Error('Invalid QR code scanning or table does not exist.');
+        setError(null);
+
+        // Read token from URL query string
+        const urlParams = new URLSearchParams(window.location.search);
+        const token = urlParams.get('token');
+
+        if (!token) {
+          setError('Access denied: Physical QR code scan required. Manually modifying URLs is prohibited.');
+          setLoading(false);
+          return;
         }
+
+        // 1. Verify Table with Secure signed QR Token
+        const tableRes = await fetch('http://localhost:5000/api/public/tables/verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ number: tableNumber, token }),
+        });
+
+        if (!tableRes.ok) {
+          const errData = await tableRes.json().catch(() => ({}));
+          throw new Error(errData.error || 'Invalid or expired table scan');
+        }
+
         const tableData = await tableRes.json();
+        sessionStorage.setItem('customerToken', tableData.token);
         setTableId(tableData.table.id);
         setRestaurant(tableData.restaurant);
 
         // 2. Fetch Menu
-        const menuRes = await fetch(`http://localhost:5000/api/public/menu`);
+        const menuRes = await fetch('http://localhost:5000/api/public/menu');
         if (!menuRes.ok) {
           throw new Error('Failed to fetch restaurant menu');
         }
@@ -230,9 +250,13 @@ export default function CustomerMenu() {
   const triggerHelper = async (type: string) => {
     setIsRequestingWaiter(false);
     try {
+      const customerToken = sessionStorage.getItem('customerToken');
       const res = await fetch('http://localhost:5000/api/public/requests', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${customerToken}`,
+        },
         body: JSON.stringify({ tableId, type }),
       });
       if (res.ok) {
@@ -256,15 +280,20 @@ export default function CustomerMenu() {
       items: cart.map((c) => ({
         menuItemId: c.menuItemId,
         quantity: c.quantity,
-        customs: c.customs,
+        price: c.price,
+        customs: c.customs ? JSON.stringify(c.customs) : null,
         notes: c.notes,
       })),
     };
 
     try {
+      const customerToken = sessionStorage.getItem('customerToken');
       const res = await fetch('http://localhost:5000/api/public/orders', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${customerToken}`,
+        },
         body: JSON.stringify(orderPayload),
       });
 

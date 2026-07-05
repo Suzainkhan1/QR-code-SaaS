@@ -2,11 +2,16 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.updateOrderStatus = exports.getOrders = exports.getCustomerOrderStatus = exports.createOrder = void 0;
 const db_1 = require("../config/db");
-const enums_1 = require("../types/enums");
+const client_1 = require("@prisma/client");
 const socket_1 = require("../socket");
 // PUBLIC: Customer places an order
 const createOrder = async (req, res) => {
-    const { tableId, restaurantId, items, notes } = req.body;
+    let { tableId, restaurantId, items, notes } = req.body;
+    // Security: enforce verified tableId and restaurantId from JWT token for CUSTOMERs
+    if (req.user?.role === 'CUSTOMER') {
+        tableId = req.user.tableId;
+        restaurantId = req.user.restaurantId;
+    }
     if (!tableId || !restaurantId || !items || !Array.isArray(items) || items.length === 0) {
         return res.status(400).json({ error: 'Invalid order request parameters' });
     }
@@ -22,6 +27,26 @@ const createOrder = async (req, res) => {
         });
         if (!table || table.restaurantId !== restaurantId) {
             return res.status(404).json({ error: 'Table not found' });
+        }
+        // Get or create active session
+        let activeSessionId = req.user?.sessionId;
+        if (!activeSessionId) {
+            const activeSession = await db_1.prisma.tableSession.findFirst({
+                where: { tableId, isActive: true },
+            });
+            if (activeSession) {
+                activeSessionId = activeSession.id;
+            }
+            else {
+                const newSession = await db_1.prisma.tableSession.create({
+                    data: {
+                        tableId,
+                        restaurantId,
+                        isActive: true,
+                    },
+                });
+                activeSessionId = newSession.id;
+            }
         }
         // Calculate billing amounts based on DB prices to prevent tampering
         let subTotal = 0;
@@ -58,18 +83,47 @@ const createOrder = async (req, res) => {
             },
         });
         const shortId = `#${(1001 + orderCountToday).toString()}`;
-        // Transaction to create order and update table status
+        // Transaction to create order, update inventory, and update table status
         const order = await db_1.prisma.$transaction(async (tx) => {
+            // 1. Deduct ingredient stock based on Recipe/BOM
+            for (const item of orderItemsToCreate) {
+                const recipeIngredients = await tx.menuItemIngredient.findMany({
+                    where: { menuItemId: item.menuItemId },
+                });
+                for (const recipe of recipeIngredients) {
+                    const qtyToDeduct = recipe.quantityUsed * item.quantity;
+                    const updatedIngredient = await tx.inventoryItem.update({
+                        where: { id: recipe.ingredientId },
+                        data: {
+                            quantity: {
+                                decrement: qtyToDeduct,
+                            },
+                        },
+                    });
+                    // Check if below minStock and alert staff
+                    if (updatedIngredient.quantity < updatedIngredient.minStock) {
+                        (0, socket_1.notifyStaff)(restaurantId, 'inventory:low_stock', {
+                            id: updatedIngredient.id,
+                            name: updatedIngredient.name,
+                            quantity: updatedIngredient.quantity,
+                            minStock: updatedIngredient.minStock,
+                            unit: updatedIngredient.unit,
+                        });
+                    }
+                }
+            }
+            // 2. Create the order
             const dbOrder = await tx.order.create({
                 data: {
                     shortId,
-                    status: enums_1.OrderStatus.PENDING,
+                    status: client_1.OrderStatus.PENDING,
                     tableId,
                     restaurantId,
                     totalAmount: subTotal,
                     taxAmount,
                     grandTotal,
                     notes,
+                    sessionId: activeSessionId,
                     items: {
                         create: orderItemsToCreate,
                     },
@@ -83,14 +137,14 @@ const createOrder = async (req, res) => {
                     },
                 },
             });
-            // Mark Table as OCCUPIED
+            // 3. Mark Table status as OCCUPIED
             await tx.table.update({
                 where: { id: tableId },
-                data: { status: enums_1.TableStatus.OCCUPIED },
+                data: { status: client_1.TableStatus.OCCUPIED },
             });
             return dbOrder;
         });
-        // Write log
+        // Write activity log
         await db_1.prisma.activityLog.create({
             data: {
                 action: 'New Order',
@@ -98,12 +152,12 @@ const createOrder = async (req, res) => {
                 restaurantId,
             },
         });
-        // Notify Staff Dashboard in Real-time (including sound alert trigger)
+        // Notify Staff Dashboard in Real-time
         (0, socket_1.notifyStaff)(restaurantId, 'order:new', order);
         // Notify other staff about table status change
         (0, socket_1.notifyStaff)(restaurantId, 'table:update', {
             action: 'update',
-            table: { ...order.table, status: enums_1.TableStatus.OCCUPIED },
+            table: { ...order.table, status: client_1.TableStatus.OCCUPIED },
         });
         return res.status(201).json({ order });
     }
@@ -196,25 +250,25 @@ const updateOrderStatus = async (req, res) => {
         });
         // Auto-update table status dynamically based on order states
         let tableStatusUpdate = null;
-        if (status === enums_1.OrderStatus.READY) {
+        if (status === client_1.OrderStatus.READY) {
             // Order is ready! Table goes to Occupied but is preparing to billing
-            tableStatusUpdate = enums_1.TableStatus.OCCUPIED;
+            tableStatusUpdate = client_1.TableStatus.OCCUPIED;
         }
-        else if (status === enums_1.OrderStatus.DELIVERED) {
-            tableStatusUpdate = enums_1.TableStatus.OCCUPIED;
+        else if (status === client_1.OrderStatus.DELIVERED) {
+            tableStatusUpdate = client_1.TableStatus.OCCUPIED;
         }
-        else if (status === enums_1.OrderStatus.CANCELLED) {
+        else if (status === client_1.OrderStatus.CANCELLED) {
             // Check if there are other active occupied orders for this table.
             const otherOrdersCount = await db_1.prisma.order.count({
                 where: {
                     tableId: order.tableId,
                     restaurantId,
-                    status: { in: [enums_1.OrderStatus.PENDING, enums_1.OrderStatus.ACCEPTED, enums_1.OrderStatus.PREPARING, enums_1.OrderStatus.COOKING, enums_1.OrderStatus.PACKING, enums_1.OrderStatus.READY] },
+                    status: { in: [client_1.OrderStatus.PENDING, client_1.OrderStatus.ACCEPTED, client_1.OrderStatus.PREPARING, client_1.OrderStatus.COOKING, client_1.OrderStatus.PACKING, client_1.OrderStatus.READY] },
                     id: { not: id },
                 },
             });
             if (otherOrdersCount === 0) {
-                tableStatusUpdate = enums_1.TableStatus.AVAILABLE;
+                tableStatusUpdate = client_1.TableStatus.AVAILABLE;
             }
         }
         if (tableStatusUpdate) {

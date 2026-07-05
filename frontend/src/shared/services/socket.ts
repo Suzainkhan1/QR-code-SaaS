@@ -7,9 +7,23 @@ class SocketService {
 
   connect() {
     if (!this.socket) {
+      const staffStorage = localStorage.getItem('auth-storage');
+      let token = '';
+      if (staffStorage) {
+        try {
+          token = JSON.parse(staffStorage)?.state?.token || '';
+        } catch (e) {
+          console.error(e);
+        }
+      }
+      if (!token) {
+        token = sessionStorage.getItem('customerToken') || '';
+      }
+
       this.socket = io(SOCKET_URL, {
         autoConnect: true,
         transports: ['websocket', 'polling'],
+        auth: { token },
       });
       console.log('[Socket Service] Connecting to Socket server...');
     }
