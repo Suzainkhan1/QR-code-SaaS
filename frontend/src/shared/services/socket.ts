@@ -7,13 +7,14 @@ class SocketService {
 
   connect() {
     if (!this.socket) {
-      const staffStorage = localStorage.getItem('auth-storage');
+      // Read token from Zustand persisted auth store (key: 'crunchos-staff-auth')
+      const staffStorage = localStorage.getItem('crunchos-staff-auth');
       let token = '';
       if (staffStorage) {
         try {
           token = JSON.parse(staffStorage)?.state?.token || '';
         } catch (e) {
-          console.error(e);
+          console.error('[Socket Service] Failed to parse auth storage:', e);
         }
       }
       if (!token) {

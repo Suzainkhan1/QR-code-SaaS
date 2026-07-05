@@ -5,10 +5,16 @@ import * as jwt from 'jsonwebtoken';
 let io: SocketIOServer | null = null;
 
 export const initSocket = (server: HTTPServer) => {
-  const corsOrigin = process.env.FRONTEND_URL || 'http://localhost:5173';
+  const allowedOrigins = [
+    'http://localhost:5173',
+    process.env.FRONTEND_URL || '',
+    'https://qr-code-saa-s.vercel.app',
+    'https://qr-code-saa-2st315m9f-suzainkhan1s-projects.vercel.app',
+  ].filter(Boolean);
+
   io = new SocketIOServer(server, {
     cors: {
-      origin: corsOrigin,
+      origin: allowedOrigins,
       methods: ['GET', 'POST', 'PUT', 'DELETE'],
       credentials: true,
     },

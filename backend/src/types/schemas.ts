@@ -1,5 +1,4 @@
 import { z } from 'zod';
-import { StaffRequestType } from '@prisma/client';
 
 export const loginSchema = z.object({
   email: z.string().email('Invalid email address format'),
@@ -22,7 +21,7 @@ export const placeOrderSchema = z.object({
 
 export const staffRequestSchema = z.object({
   tableId: z.string().uuid('Invalid table ID format'),
-  type: z.nativeEnum(StaffRequestType),
+  type: z.enum(['WATER', 'SPOON', 'TISSUE', 'BILL', 'CLEANING', 'CALL_WAITER']),
 });
 
 export const categorySchema = z.object({
