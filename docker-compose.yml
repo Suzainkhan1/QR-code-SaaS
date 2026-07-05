@@ -6,9 +6,9 @@ services:
     container_name: crunchos-db
     restart: always
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: crunchos
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-crunchos}
     ports:
       - "5432:5432"
     volumes:
@@ -23,9 +23,10 @@ services:
     ports:
       - "5000:5000"
     environment:
-      - PORT=5000
-      - DATABASE_URL=postgresql://postgres:postgres@db:5432/crunchos?schema=public
-      - JWT_SECRET=crunchos_jwt_secret_key_2026_super_secure
+      - PORT=${PORT:-5000}
+      - DATABASE_URL=${DATABASE_URL}
+      - JWT_SECRET=${JWT_SECRET}
+      - FRONTEND_URL=${FRONTEND_URL}
     depends_on:
       - db
 

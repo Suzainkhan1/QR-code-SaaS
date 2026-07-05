@@ -166,7 +166,8 @@ export const getTables = async (req: AuthenticatedRequest, res: Response) => {
     const secret = process.env.JWT_SECRET!;
     const tablesWithQR = tables.map((t) => {
       const qrToken = jwt.sign({ number: t.number, type: 'qr' }, secret);
-      const customerURL = `http://localhost:5173/table/${t.number}?token=${qrToken}`;
+      const frontendURL = process.env.FRONTEND_URL || 'http://localhost:5173';
+      const customerURL = `${frontendURL}/table/${t.number}?token=${qrToken}`;
       const qrURL = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(customerURL)}`;
       return {
         ...t,

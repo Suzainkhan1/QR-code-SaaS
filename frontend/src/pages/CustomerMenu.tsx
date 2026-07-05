@@ -18,6 +18,8 @@ import { useCart } from '../shared/hooks/useCart';
 import { socketService } from '../shared/services/socket';
 import ThemeToggle from '../shared/components/ThemeToggle';
 
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+
 interface MenuItem {
   id: string;
   name: string;
@@ -103,7 +105,7 @@ export default function CustomerMenu() {
         }
 
         // 1. Verify Table with Secure signed QR Token
-        const tableRes = await fetch('http://localhost:5000/api/public/tables/verify', {
+        const tableRes = await fetch(`${API_URL}/api/public/tables/verify`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ number: tableNumber, token }),
@@ -120,7 +122,7 @@ export default function CustomerMenu() {
         setRestaurant(tableData.restaurant);
 
         // 2. Fetch Menu
-        const menuRes = await fetch('http://localhost:5000/api/public/menu');
+        const menuRes = await fetch(`${API_URL}/api/public/menu`);
         if (!menuRes.ok) {
           throw new Error('Failed to fetch restaurant menu');
         }
@@ -251,7 +253,7 @@ export default function CustomerMenu() {
     setIsRequestingWaiter(false);
     try {
       const customerToken = sessionStorage.getItem('customerToken');
-      const res = await fetch('http://localhost:5000/api/public/requests', {
+      const res = await fetch(`${API_URL}/api/public/requests`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -288,7 +290,7 @@ export default function CustomerMenu() {
 
     try {
       const customerToken = sessionStorage.getItem('customerToken');
-      const res = await fetch('http://localhost:5000/api/public/orders', {
+      const res = await fetch(`${API_URL}/api/public/orders`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

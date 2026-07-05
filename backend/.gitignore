@@ -5,5 +5,8 @@ build/
 .env.local
 .env.production
 .env.development
+*.db
+*.sqlite
+*.sqlite3
 logs/
 *.log

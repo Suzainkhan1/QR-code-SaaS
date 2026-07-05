@@ -5,10 +5,12 @@ import * as jwt from 'jsonwebtoken';
 let io: SocketIOServer | null = null;
 
 export const initSocket = (server: HTTPServer) => {
+  const corsOrigin = process.env.FRONTEND_URL || 'http://localhost:5173';
   io = new SocketIOServer(server, {
     cors: {
-      origin: '*', // Allow all origins for dev simplicity
+      origin: corsOrigin,
       methods: ['GET', 'POST', 'PUT', 'DELETE'],
+      credentials: true,
     },
   });
 

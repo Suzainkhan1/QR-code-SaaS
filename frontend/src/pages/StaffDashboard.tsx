@@ -33,6 +33,11 @@ import ThemeToggle from '../shared/components/ThemeToggle';
 import AnalyticsView from './dashboard/AnalyticsView';
 import LogsView from './dashboard/LogsView';
 
+const fetchFromAPI = (path: string, options?: RequestInit) => {
+  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+  return fetch(`${API_URL}${path}`, options);
+};
+
 type TabType = 'orders' | 'billing' | 'tables' | 'menu' | 'requests' | 'analytics' | 'inventory' | 'expenses' | 'settings' | 'logs';
 
 export default function StaffDashboard() {
@@ -169,15 +174,15 @@ export default function StaffDashboard() {
     try {
       // Parallel fetches for speed
       const [ordRes, tabRes, catRes, reqRes, invRes, expRes, logRes, setRes, stfRes] = await Promise.all([
-        fetch('http://localhost:5000/api/orders', { headers: getHeaders() }),
-        fetch('http://localhost:5000/api/tables', { headers: getHeaders() }),
-        fetch('http://localhost:5000/api/menu/categories', { headers: getHeaders() }),
-        fetch('http://localhost:5000/api/requests', { headers: getHeaders() }),
-        fetch('http://localhost:5000/api/inventory', { headers: getHeaders() }),
-        fetch('http://localhost:5000/api/expenses', { headers: getHeaders() }),
-        fetch('http://localhost:5000/api/logs', { headers: getHeaders() }),
-        fetch('http://localhost:5000/api/settings', { headers: getHeaders() }),
-        fetch('http://localhost:5000/api/auth/staff', { headers: getHeaders() }),
+        fetchFromAPI('/api/orders', { headers: getHeaders() }),
+        fetchFromAPI('/api/tables', { headers: getHeaders() }),
+        fetchFromAPI('/api/menu/categories', { headers: getHeaders() }),
+        fetchFromAPI('/api/requests', { headers: getHeaders() }),
+        fetchFromAPI('/api/inventory', { headers: getHeaders() }),
+        fetchFromAPI('/api/expenses', { headers: getHeaders() }),
+        fetchFromAPI('/api/logs', { headers: getHeaders() }),
+        fetchFromAPI('/api/settings', { headers: getHeaders() }),
+        fetchFromAPI('/api/auth/staff', { headers: getHeaders() }),
       ]);
 
       if (ordRes.ok) {
@@ -230,7 +235,7 @@ export default function StaffDashboard() {
   const fetchAnalytics = async () => {
     if (!token || (user?.role !== 'OWNER' && user?.role !== 'MANAGER')) return;
     try {
-      const res = await fetch('http://localhost:5000/api/analytics', { headers: getHeaders() });
+      const res = await fetchFromAPI('/api/analytics', { headers: getHeaders() });
       if (res.ok) {
         const d = await res.json();
         setAnalytics(d);
@@ -331,7 +336,7 @@ export default function StaffDashboard() {
   // Section 1: Order State Transitions
   const handleUpdateOrderStatus = async (orderId: string, nextStatus: string) => {
     try {
-      const res = await fetch(`http://localhost:5000/api/orders/${orderId}/status`, {
+      const res = await fetchFromAPI(`/api/orders/${orderId}/status`, {
         method: 'PUT',
         headers: getHeaders(),
         body: JSON.stringify({ status: nextStatus }),
@@ -349,7 +354,7 @@ export default function StaffDashboard() {
     setSelectedTableForBilling(table);
     setDiscountAmount(0);
     try {
-      const res = await fetch(`http://localhost:5000/api/billing/summary/${table.id}`, {
+      const res = await fetchFromAPI(`/api/billing/summary/${table.id}`, {
         headers: getHeaders(),
       });
       if (res.ok) {
@@ -364,7 +369,7 @@ export default function StaffDashboard() {
   const handleCheckoutTable = async () => {
     if (!selectedTableForBilling) return;
     try {
-      const res = await fetch(`http://localhost:5000/api/billing/checkout`, {
+      const res = await fetchFromAPI(`/api/billing/checkout`, {
         method: 'POST',
         headers: getHeaders(),
         body: JSON.stringify({
@@ -388,7 +393,7 @@ export default function StaffDashboard() {
 
   const handleSettleBill = async (billId: string, method: string) => {
     try {
-      const res = await fetch(`http://localhost:5000/api/billing/${billId}/pay`, {
+      const res = await fetchFromAPI(`/api/billing/${billId}/pay`, {
         method: 'PUT',
         headers: getHeaders(),
         body: JSON.stringify({ paymentMethod: method }),
@@ -409,7 +414,7 @@ export default function StaffDashboard() {
     e.preventDefault();
     if (!newTableName) return;
     try {
-      const res = await fetch('http://localhost:5000/api/tables', {
+      const res = await fetchFromAPI('/api/tables', {
         method: 'POST',
         headers: getHeaders(),
         body: JSON.stringify({ number: newTableName, capacity: newTableCapacity }),
@@ -426,7 +431,7 @@ export default function StaffDashboard() {
   const handleDeleteTable = async (tableId: string) => {
     if (!window.confirm('Delete this table QR?')) return;
     try {
-      await fetch(`http://localhost:5000/api/tables/${tableId}`, {
+      await fetchFromAPI(`/api/tables/${tableId}`, {
         method: 'DELETE',
         headers: getHeaders(),
       });
@@ -441,7 +446,7 @@ export default function StaffDashboard() {
     e.preventDefault();
     if (!newCatName) return;
     try {
-      const res = await fetch('http://localhost:5000/api/menu/categories', {
+      const res = await fetchFromAPI('/api/menu/categories', {
         method: 'POST',
         headers: getHeaders(),
         body: JSON.stringify({ name: newCatName }),
@@ -478,7 +483,7 @@ export default function StaffDashboard() {
           return;
         }
         for (const cat of importedData) {
-          const catRes = await fetch('http://localhost:5000/api/menu/categories', {
+          const catRes = await fetchFromAPI('/api/menu/categories', {
             method: 'POST',
             headers: getHeaders(),
             body: JSON.stringify({ name: cat.name, description: cat.description }),
@@ -488,7 +493,7 @@ export default function StaffDashboard() {
             const categoryId = catData.category.id;
             if (cat.items && Array.isArray(cat.items)) {
               for (const item of cat.items) {
-                await fetch('http://localhost:5000/api/menu/items', {
+                await fetchFromAPI('/api/menu/items', {
                   method: 'POST',
                   headers: getHeaders(),
                   body: JSON.stringify({
@@ -522,7 +527,7 @@ export default function StaffDashboard() {
     if (!name || !price || !categoryId) return;
 
     try {
-      const res = await fetch('http://localhost:5000/api/menu/items', {
+      const res = await fetchFromAPI('/api/menu/items', {
         method: 'POST',
         headers: getHeaders(),
         body: JSON.stringify(newItemData),
@@ -548,7 +553,7 @@ export default function StaffDashboard() {
 
   const handleToggleItemAvailability = async (item: any) => {
     try {
-      await fetch(`http://localhost:5000/api/menu/items/${item.id}`, {
+      await fetchFromAPI(`/api/menu/items/${item.id}`, {
         method: 'PUT',
         headers: getHeaders(),
         body: JSON.stringify({ isAvailable: !item.isAvailable }),
@@ -562,7 +567,7 @@ export default function StaffDashboard() {
   const handleDeleteProduct = async (productId: string) => {
     if (!window.confirm('Remove this menu item?')) return;
     try {
-      await fetch(`http://localhost:5000/api/menu/items/${productId}`, {
+      await fetchFromAPI(`/api/menu/items/${productId}`, {
         method: 'DELETE',
         headers: getHeaders(),
       });
@@ -575,7 +580,7 @@ export default function StaffDashboard() {
   // Section 5: Resolve request
   const handleResolveRequest = async (id: string) => {
     try {
-      await fetch(`http://localhost:5000/api/requests/${id}/resolve`, {
+      await fetchFromAPI(`/api/requests/${id}/resolve`, {
         method: 'PUT',
         headers: getHeaders(),
       });
@@ -592,7 +597,7 @@ export default function StaffDashboard() {
     if (!name || !quantity) return;
 
     try {
-      const res = await fetch('http://localhost:5000/api/inventory', {
+      const res = await fetchFromAPI('/api/inventory', {
         method: 'POST',
         headers: getHeaders(),
         body: JSON.stringify(newInventoryData),
@@ -609,7 +614,7 @@ export default function StaffDashboard() {
   const handleDeleteInventory = async (id: string) => {
     if (!window.confirm('Delete inventory record?')) return;
     try {
-      await fetch(`http://localhost:5000/api/inventory/${id}`, {
+      await fetchFromAPI(`/api/inventory/${id}`, {
         method: 'DELETE',
         headers: getHeaders(),
       });
@@ -626,7 +631,7 @@ export default function StaffDashboard() {
     if (!amount) return;
 
     try {
-      const res = await fetch('http://localhost:5000/api/expenses', {
+      const res = await fetchFromAPI('/api/expenses', {
         method: 'POST',
         headers: getHeaders(),
         body: JSON.stringify(newExpenseData),
@@ -645,7 +650,7 @@ export default function StaffDashboard() {
   const handleUpdateSettings = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await fetch('http://localhost:5000/api/settings', {
+      await fetchFromAPI('/api/settings', {
         method: 'PUT',
         headers: getHeaders(),
         body: JSON.stringify(settings),
@@ -663,7 +668,7 @@ export default function StaffDashboard() {
     if (!name || !email || !password) return;
 
     try {
-      const res = await fetch('http://localhost:5000/api/auth/staff', {
+      const res = await fetchFromAPI('/api/auth/staff', {
         method: 'POST',
         headers: getHeaders(),
         body: JSON.stringify(newStaffData),
@@ -683,7 +688,7 @@ export default function StaffDashboard() {
   const handleDeleteStaff = async (id: string) => {
     if (!window.confirm('Delete this staff member?')) return;
     try {
-      await fetch(`http://localhost:5000/api/auth/staff/${id}`, {
+      await fetchFromAPI(`/api/auth/staff/${id}`, {
         method: 'DELETE',
         headers: getHeaders(),
       });
@@ -1183,7 +1188,7 @@ export default function StaffDashboard() {
                         <button
                           onClick={async () => {
                             if (window.confirm('Delete category?')) {
-                              await fetch(`http://localhost:5000/api/menu/categories/${c.id}`, { method: 'DELETE', headers: getHeaders() });
+                              await fetchFromAPI(`/api/menu/categories/${c.id}`, { method: 'DELETE', headers: getHeaders() });
                               fetchData();
                             }
                           }}

@@ -4,31 +4,31 @@ node_modules/
 # Builds
 dist/
 build/
+coverage/
 
 # Logs
 logs/
 *.log
 
-# Environment
+# Environment Files
 .env
 .env.local
 .env.production
+.env.development
 
-# Database
+# Database Files
 *.db
 *.sqlite
 *.sqlite3
-
-# Prisma
 prisma/dev.db
 
 # OS Files
 .DS_Store
 Thumbs.db
 
-# IDE
+# IDE Files
 .vscode/
 .idea/
 
-# Cache
+# Cache Files
 .cache/
