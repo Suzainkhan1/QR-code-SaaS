@@ -1,14 +1,16 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Coffee, ArrowRight, ShieldCheck, Mail, Lock } from 'lucide-react';
+import { Coffee, ArrowRight, ShieldCheck, Mail, Lock, Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '../shared/hooks/useAuth';
+import { API_URL } from '../config/api';
 
 export default function StaffLogin() {
   const navigate = useNavigate();
   const loginUser = useAuth((state) => state.login);
 
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [email, setEmail] = useState('suzainkhan1800@gmail.com');
+  const [password, setPassword] = useState('password12321');
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -23,7 +25,6 @@ export default function StaffLogin() {
     setError(null);
 
     try {
-      const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
       const res = await fetch(`${API_URL}/api/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -76,10 +77,10 @@ export default function StaffLogin() {
               <Mail className="absolute left-3.5 top-3 w-4 h-4 text-zinc-500" />
               <input
                 type="email"
-                placeholder="rohan@restaurant.com"
+                placeholder="suzainkhan1800@gmail.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full bg-zinc-900 border border-zinc-800 rounded-xl py-2.5 pl-10 pr-4 text-xs text-brand-textPrimary placeholder-zinc-650 focus:outline-none focus:border-brand-accent transition-all"
+                className="w-full bg-zinc-900 border border-zinc-800 rounded-xl py-2.5 pl-10 pr-4 text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-brand-accent caret-brand-accent transition-all"
               />
             </div>
           </div>
@@ -91,12 +92,24 @@ export default function StaffLogin() {
             <div className="relative">
               <Lock className="absolute left-3.5 top-3 w-4 h-4 text-zinc-500" />
               <input
-                type="password"
-                placeholder="••••••••••••"
+                type={showPassword ? 'text' : 'password'}
+                placeholder="password12321"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full bg-zinc-900 border border-zinc-800 rounded-xl py-2.5 pl-10 pr-4 text-xs text-brand-textPrimary placeholder-zinc-650 focus:outline-none focus:border-brand-accent transition-all"
+                className="w-full bg-zinc-900 border border-zinc-800 rounded-xl py-2.5 pl-10 pr-10 text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-brand-accent caret-brand-accent transition-all"
               />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3.5 top-3 text-zinc-500 hover:text-zinc-300 focus:outline-none transition-colors"
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+              >
+                {showPassword ? (
+                  <EyeOff className="w-4 h-4" />
+                ) : (
+                  <Eye className="w-4 h-4" />
+                )}
+              </button>
             </div>
           </div>
 

@@ -28,12 +28,13 @@ const PORT = process.env.PORT || 5000;
 app.use(helmet({
   crossOriginResourcePolicy: false, // Allow displaying local image assets in frontend
 }));
-const allowedOrigins = [
-  'http://localhost:5173',
-  process.env.FRONTEND_URL,
-  'https://qr-code-saa-s.vercel.app',
-  'https://qr-code-saa-2st315m9f-suzainkhan1s-projects.vercel.app'
-];
+const allowedOrigins: string[] = [];
+if (process.env.FRONTEND_URL) {
+  allowedOrigins.push(...process.env.FRONTEND_URL.split(',').map(url => url.trim()));
+}
+if (process.env.NODE_ENV !== 'production') {
+  allowedOrigins.push('http://localhost:5173');
+}
 
 app.use(cors({
   origin(origin, callback) {

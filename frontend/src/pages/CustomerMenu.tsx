@@ -17,8 +17,9 @@ import {
 import { useCart } from '../shared/hooks/useCart';
 import { socketService } from '../shared/services/socket';
 import ThemeToggle from '../shared/components/ThemeToggle';
+import { API_URL } from '../config/api';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+
 
 interface MenuItem {
   id: string;

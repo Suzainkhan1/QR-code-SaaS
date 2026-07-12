@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Coffee, ArrowRight, Home, Globe, User, Mail, Lock } from 'lucide-react';
 import { useAuth } from '../shared/hooks/useAuth';
+import { API_URL } from '../config/api';
 
 export default function StaffRegister() {
   const navigate = useNavigate();
@@ -34,7 +35,6 @@ export default function StaffRegister() {
     setError(null);
 
     try {
-      const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
       const res = await fetch(`${API_URL}/api/auth/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

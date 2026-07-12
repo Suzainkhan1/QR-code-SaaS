@@ -214,7 +214,10 @@ export const addTable = async (req: AuthenticatedRequest, res: Response) => {
     });
 
     // Generate QR
-    const customerURL = `http://localhost:5173/r/${req.user?.restaurantId}/table/${newTable.number}`;
+    const secret = process.env.JWT_SECRET!;
+    const qrToken = jwt.sign({ number: newTable.number, type: 'qr' }, secret);
+    const frontendURL = process.env.FRONTEND_URL || 'http://localhost:5173';
+    const customerURL = `${frontendURL}/table/${newTable.number}?token=${qrToken}`;
     const qrURL = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(customerURL)}`;
 
     await prisma.activityLog.create({

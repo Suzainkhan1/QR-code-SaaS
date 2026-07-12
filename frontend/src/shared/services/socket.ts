@@ -1,6 +1,5 @@
 import { io, Socket } from 'socket.io-client';
-
-const SOCKET_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+import { API_URL } from '../../config/api';
 
 class SocketService {
   private socket: Socket | null = null;
@@ -21,7 +20,7 @@ class SocketService {
         token = sessionStorage.getItem('customerToken') || '';
       }
 
-      this.socket = io(SOCKET_URL, {
+      this.socket = io(API_URL, {
         autoConnect: true,
         transports: ['websocket', 'polling'],
         auth: { token },

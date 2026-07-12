@@ -28,13 +28,13 @@ import {
 } from 'lucide-react';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { useAuth } from '../shared/hooks/useAuth';
+import { API_URL } from '../config/api';
 import { socketService } from '../shared/services/socket';
 import ThemeToggle from '../shared/components/ThemeToggle';
 import AnalyticsView from './dashboard/AnalyticsView';
 import LogsView from './dashboard/LogsView';
 
 const fetchFromAPI = (path: string, options?: RequestInit) => {
-  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
   return fetch(`${API_URL}${path}`, options);
 };
 
