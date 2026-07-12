@@ -53,14 +53,19 @@ export const createOrder = async (req: AuthenticatedRequest, res: Response) => {
       }
     }
 
-    // Calculate billing amounts based on DB prices to prevent tampering
+    // Calculate billing amounts based on DB prices to prevent tampering.
+    // Batch-fetch all requested menu items in a SINGLE query (fixes N+1).
+    const requestedIds = items.map((i: any) => i.menuItemId);
+    const menuItemsFromDB = await prisma.menuItem.findMany({
+      where: { id: { in: requestedIds }, restaurantId },
+    });
+    const menuItemMap = new Map(menuItemsFromDB.map((m) => [m.id, m]));
+
     let subTotal = 0;
     const orderItemsToCreate: any[] = [];
 
     for (const item of items) {
-      const menuItem = await prisma.menuItem.findFirst({
-        where: { id: item.menuItemId, restaurantId },
-      });
+      const menuItem = menuItemMap.get(item.menuItemId);
       if (!menuItem) {
         return res.status(400).json({ error: `Menu item ${item.menuItemId} not found` });
       }
@@ -75,7 +80,10 @@ export const createOrder = async (req: AuthenticatedRequest, res: Response) => {
         menuItemId: menuItem.id,
         quantity: item.quantity,
         price: menuItem.price,
-        customs: item.customs ? JSON.stringify(item.customs) : null,
+        // customs arrives from the frontend already JSON-stringified.
+        // Store it as-is to avoid double-encoding (which caused the Kitchen
+        // Queue to render numeric character indices instead of modifier names).
+        customs: item.customs || null,
         notes: item.notes || null,
       });
     }

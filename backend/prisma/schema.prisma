@@ -155,6 +155,9 @@ model MenuItem {
   restaurant    Restaurant           @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
   orderItems    OrderItem[]
   ingredients   MenuItemIngredient[]
+
+  @@index([restaurantId])
+  @@index([categoryId])
 }
 
 model MenuItemIngredient {
@@ -194,6 +197,9 @@ model Order {
   @@index([tableId])
   @@index([restaurantId])
   @@index([sessionId])
+  @@index([createdAt])
+  @@index([restaurantId, status])
+  @@index([restaurantId, createdAt])
 }
 
 model OrderItem {
@@ -206,6 +212,9 @@ model OrderItem {
   price      Float
   customs    String?
   notes      String?
+
+  @@index([orderId])
+  @@index([menuItemId])
 }
 
 model Bill {
@@ -228,6 +237,8 @@ model Bill {
 
   @@index([restaurantId])
   @@index([sessionId])
+  @@index([isPaid])
+  @@index([paidAt])
 }
 
 model StaffRequest {
@@ -261,6 +272,8 @@ model Expense {
   description  String?
   restaurantId String
   restaurant   Restaurant  @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+
+  @@index([restaurantId])
 }
 
 model ActivityLog {
@@ -270,4 +283,7 @@ model ActivityLog {
   restaurantId String
   restaurant   Restaurant  @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
   createdAt    DateTime    @default(now())
+
+  @@index([restaurantId])
+  @@index([createdAt])
 }

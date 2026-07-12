@@ -24,10 +24,8 @@ const app = express();
 const server = http.createServer(app);
 const PORT = process.env.PORT || 5000;
 
-// Security and Parsers
-app.use(helmet({
-  crossOriginResourcePolicy: false, // Allow displaying local image assets in frontend
-}));
+// CORS Configuration — MUST be registered BEFORE helmet so that preflight
+// OPTIONS requests receive Access-Control-* headers before helmet touches them.
 const allowedOrigins: string[] = [];
 if (process.env.FRONTEND_URL) {
   allowedOrigins.push(...process.env.FRONTEND_URL.split(',').map(url => url.trim()));
@@ -36,18 +34,35 @@ if (process.env.NODE_ENV !== 'production') {
   allowedOrigins.push('http://localhost:5173');
 }
 
+console.log('[CORS] Allowed origins:', allowedOrigins);
+
 app.use(cors({
   origin(origin, callback) {
+    // Allow requests with no origin (server-to-server, curl, mobile apps)
     if (!origin) return callback(null, true);
 
     if (allowedOrigins.includes(origin)) {
       return callback(null, true);
     }
 
-    return callback(new Error('Not allowed by CORS'));
+    // Return false instead of an Error to avoid triggering the Express
+    // error handler, which would return a 500 without CORS headers.
+    // The browser will still block the request because there is no
+    // Access-Control-Allow-Origin header in the response.
+    console.warn(`[CORS] Blocked origin: ${origin}`);
+    return callback(null, false);
   },
-  credentials: true
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
 }));
+
+// Security headers — registered AFTER cors so preflight responses already
+// carry the required Access-Control-* headers.
+app.use(helmet({
+  crossOriginResourcePolicy: false, // Allow displaying local image assets in frontend
+}));
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 

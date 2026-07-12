@@ -245,13 +245,23 @@ export default function StaffDashboard() {
     }
   };
 
-  // Run initial data fetch
+  const activeTabRef = useRef(activeTab);
+  useEffect(() => {
+    activeTabRef.current = activeTab;
+  }, [activeTab]);
+
+  // Run initial data fetch, and fetch analytics when active tab becomes 'analytics'
   useEffect(() => {
     if (token) {
       fetchData();
-      fetchAnalytics();
     }
   }, [token]);
+
+  useEffect(() => {
+    if (token && activeTab === 'analytics') {
+      fetchAnalytics();
+    }
+  }, [token, activeTab]);
 
   // Connect WebSockets and join rooms
   useEffect(() => {
@@ -263,14 +273,12 @@ export default function StaffDashboard() {
       socket.on('order:new', (order: any) => {
         setOrders((prev) => [order, ...prev]);
         playAlertChime();
-        // Trigger data re-sync for analytics
-        fetchAnalytics();
+        // Skip fetchAnalytics() here to avoid duplicate loads.
       });
 
       // 2. Listen for order updates
       socket.on('order:update', (updatedOrder: any) => {
         setOrders((prev) => prev.map((o) => (o.id === updatedOrder.id ? updatedOrder : o)));
-        fetchAnalytics();
       });
 
       // 3. Listen for table updates
@@ -296,8 +304,10 @@ export default function StaffDashboard() {
 
       // 5. Listen for billing actions
       socket.on('billing:update', () => {
-        fetchAnalytics();
         fetchData();
+        if (activeTabRef.current === 'analytics') {
+          fetchAnalytics();
+        }
       });
 
       return () => {
@@ -311,28 +321,6 @@ export default function StaffDashboard() {
     }
   }, [token, restaurantId]);
 
-  // Operational Timers in Live Orders (KDS)
-  const OrderTimer = ({ time }: { time: string }) => {
-    const [seconds, setSeconds] = useState(0);
-
-    useEffect(() => {
-      const start = new Date(time).getTime();
-      const interval = setInterval(() => {
-        setSeconds(Math.floor((Date.now() - start) / 1000));
-      }, 1000);
-      return () => clearInterval(interval);
-    }, [time]);
-
-    const mm = Math.floor(seconds / 60);
-    const ss = seconds % 60;
-    return (
-      <span className="flex items-center gap-1 font-mono text-brand-accent text-xs">
-        <Clock className="w-3.5 h-3.5" />
-        {mm}:{ss.toString().padStart(2, '0')}
-      </span>
-    );
-  };
-
   // Section 1: Order State Transitions
   const handleUpdateOrderStatus = async (orderId: string, nextStatus: string) => {
     try {
@@ -342,7 +330,9 @@ export default function StaffDashboard() {
         body: JSON.stringify({ status: nextStatus }),
       });
       if (res.ok) {
-        fetchData();
+        const d = await res.json();
+        // Targeted update (fixes fetchData() over-fetching)
+        setOrders((prev) => prev.map((o) => (o.id === orderId ? d.order : o)));
       }
     } catch (e) {
       console.error(e);
@@ -384,7 +374,8 @@ export default function StaffDashboard() {
         setSelectedBillForReceipt(d.bill);
         setSelectedTableForBilling(null);
         setTableBillSummary(null);
-        fetchData();
+        // Targeted update: update table status to BILLING locally
+        setTables((prev) => prev.map((t) => (t.id === d.table.id ? d.table : t)));
       }
     } catch (e) {
       console.error(e);
@@ -400,9 +391,21 @@ export default function StaffDashboard() {
       });
 
       if (res.ok) {
+        const d = await res.json();
         setSelectedBillForReceipt(null);
-        fetchData();
-        fetchAnalytics();
+        // Targeted update: update table status to AVAILABLE locally
+        if (d.table) {
+          setTables((prev) => prev.map((t) => (t.id === d.table.id ? d.table : t)));
+        }
+        // Targeted update: set all orders in this session to DELIVERED locally
+        if (d.bill && d.bill.sessionId) {
+          setOrders((prev) =>
+            prev.map((o) => (o.sessionId === d.bill.sessionId ? { ...o, status: 'DELIVERED' } : o))
+          );
+        }
+        if (activeTabRef.current === 'analytics') {
+          fetchAnalytics();
+        }
       }
     } catch (e) {
       console.error(e);
@@ -420,8 +423,10 @@ export default function StaffDashboard() {
         body: JSON.stringify({ number: newTableName, capacity: newTableCapacity }),
       });
       if (res.ok) {
+        const d = await res.json();
         setNewTableName('');
-        fetchData();
+        // Targeted update: add new table locally
+        setTables((prev) => [...prev, d.table]);
       }
     } catch (e) {
       console.error(e);
@@ -431,11 +436,14 @@ export default function StaffDashboard() {
   const handleDeleteTable = async (tableId: string) => {
     if (!window.confirm('Delete this table QR?')) return;
     try {
-      await fetchFromAPI(`/api/tables/${tableId}`, {
+      const res = await fetchFromAPI(`/api/tables/${tableId}`, {
         method: 'DELETE',
         headers: getHeaders(),
       });
-      fetchData();
+      if (res.ok) {
+        // Targeted update: remove table locally
+        setTables((prev) => prev.filter((t) => t.id !== tableId));
+      }
     } catch (e) {
       console.error(e);
     }
@@ -452,8 +460,10 @@ export default function StaffDashboard() {
         body: JSON.stringify({ name: newCatName }),
       });
       if (res.ok) {
+        const d = await res.json();
         setNewCatName('');
-        fetchData();
+        // Targeted update
+        setCategories((prev) => [...prev, d.category]);
       }
     } catch (e) {
       console.error(e);
@@ -533,6 +543,7 @@ export default function StaffDashboard() {
         body: JSON.stringify(newItemData),
       });
       if (res.ok) {
+        const d = await res.json();
         setNewItemData({
           name: '',
           description: '',
@@ -544,7 +555,15 @@ export default function StaffDashboard() {
           categoryId: categories[0]?.id || '',
           image: '',
         });
-        fetchData();
+        // Targeted updates
+        setMenuItems((prev) => [...prev, d.item]);
+        setCategories((prev) =>
+          prev.map((cat) =>
+            cat.id === d.item.categoryId
+              ? { ...cat, items: [...(cat.items || []), d.item] }
+              : cat
+          )
+        );
       }
     } catch (e) {
       console.error(e);
@@ -553,12 +572,22 @@ export default function StaffDashboard() {
 
   const handleToggleItemAvailability = async (item: any) => {
     try {
-      await fetchFromAPI(`/api/menu/items/${item.id}`, {
+      const res = await fetchFromAPI(`/api/menu/items/${item.id}`, {
         method: 'PUT',
         headers: getHeaders(),
         body: JSON.stringify({ isAvailable: !item.isAvailable }),
       });
-      fetchData();
+      if (res.ok) {
+        const d = await res.json();
+        // Targeted updates
+        setMenuItems((prev) => prev.map((i) => (i.id === item.id ? d.item : i)));
+        setCategories((prev) =>
+          prev.map((cat) => ({
+            ...cat,
+            items: (cat.items || []).map((i: any) => (i.id === item.id ? d.item : i)),
+          }))
+        );
+      }
     } catch (e) {
       console.error(e);
     }
@@ -567,11 +596,20 @@ export default function StaffDashboard() {
   const handleDeleteProduct = async (productId: string) => {
     if (!window.confirm('Remove this menu item?')) return;
     try {
-      await fetchFromAPI(`/api/menu/items/${productId}`, {
+      const res = await fetchFromAPI(`/api/menu/items/${productId}`, {
         method: 'DELETE',
         headers: getHeaders(),
       });
-      fetchData();
+      if (res.ok) {
+        // Targeted updates
+        setMenuItems((prev) => prev.filter((i) => i.id !== productId));
+        setCategories((prev) =>
+          prev.map((cat) => ({
+            ...cat,
+            items: (cat.items || []).filter((i: any) => i.id !== productId),
+          }))
+        );
+      }
     } catch (e) {
       console.error(e);
     }
@@ -580,11 +618,14 @@ export default function StaffDashboard() {
   // Section 5: Resolve request
   const handleResolveRequest = async (id: string) => {
     try {
-      await fetchFromAPI(`/api/requests/${id}/resolve`, {
+      const res = await fetchFromAPI(`/api/requests/${id}/resolve`, {
         method: 'PUT',
         headers: getHeaders(),
       });
-      fetchData();
+      if (res.ok) {
+        // Targeted update
+        setRequests((prev) => prev.filter((r) => r.id !== id));
+      }
     } catch (e) {
       console.error(e);
     }
@@ -603,8 +644,10 @@ export default function StaffDashboard() {
         body: JSON.stringify(newInventoryData),
       });
       if (res.ok) {
+        const d = await res.json();
         setNewInventoryData({ name: '', quantity: '', unit: 'kg', minStock: '5' });
-        fetchData();
+        // Targeted update
+        setInventory((prev) => [...prev, d.item]);
       }
     } catch (e) {
       console.error(e);
@@ -614,11 +657,14 @@ export default function StaffDashboard() {
   const handleDeleteInventory = async (id: string) => {
     if (!window.confirm('Delete inventory record?')) return;
     try {
-      await fetchFromAPI(`/api/inventory/${id}`, {
+      const res = await fetchFromAPI(`/api/inventory/${id}`, {
         method: 'DELETE',
         headers: getHeaders(),
       });
-      fetchData();
+      if (res.ok) {
+        // Targeted update
+        setInventory((prev) => prev.filter((item) => item.id !== id));
+      }
     } catch (e) {
       console.error(e);
     }
@@ -637,9 +683,13 @@ export default function StaffDashboard() {
         body: JSON.stringify(newExpenseData),
       });
       if (res.ok) {
+        const d = await res.json();
         setNewExpenseData({ category: 'Raw Materials', amount: '', description: '' });
-        fetchData();
-        fetchAnalytics();
+        // Targeted update
+        setExpenses((prev) => [...prev, d.expense]);
+        if (activeTabRef.current === 'analytics') {
+          fetchAnalytics();
+        }
       }
     } catch (e) {
       console.error(e);
@@ -650,13 +700,14 @@ export default function StaffDashboard() {
   const handleUpdateSettings = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await fetchFromAPI('/api/settings', {
+      const res = await fetchFromAPI('/api/settings', {
         method: 'PUT',
         headers: getHeaders(),
         body: JSON.stringify(settings),
       });
-      alert('Settings updated successfully.');
-      fetchData();
+      if (res.ok) {
+        alert('Settings updated successfully.');
+      }
     } catch (e) {
       console.error(e);
     }
@@ -674,8 +725,10 @@ export default function StaffDashboard() {
         body: JSON.stringify(newStaffData),
       });
       if (res.ok) {
+        const d = await res.json();
         setNewStaffData({ name: '', email: '', password: '', role: 'WAITER' });
-        fetchData();
+        // Targeted update
+        setStaff((prev) => [...prev, d.user]);
       } else {
         const err = await res.json();
         alert(err.error || 'Failed to add staff member');
@@ -688,11 +741,14 @@ export default function StaffDashboard() {
   const handleDeleteStaff = async (id: string) => {
     if (!window.confirm('Delete this staff member?')) return;
     try {
-      await fetchFromAPI(`/api/auth/staff/${id}`, {
+      const res = await fetchFromAPI(`/api/auth/staff/${id}`, {
         method: 'DELETE',
         headers: getHeaders(),
       });
-      fetchData();
+      if (res.ok) {
+        // Targeted update
+        setStaff((prev) => prev.filter((s) => s.id !== id));
+      }
     } catch (e) {
       console.error(e);
     }
@@ -864,8 +920,18 @@ export default function StaffDashboard() {
                           {/* Items List */}
                           <div className="border-t border-zinc-850 pt-3 flex flex-col gap-2">
                             {order.items.map((item: any) => {
-                              const customsObj = item.customs ? JSON.parse(item.customs) : {};
-                              const hasCustoms = Object.keys(customsObj).length > 0;
+                              // Backwards-compatible parse: old DB rows may be
+                              // double-stringified (string→string instead of
+                              // string→object). Parse until we get an object.
+                              let customsObj: Record<string, boolean> = {};
+                              if (item.customs) {
+                                try {
+                                  let parsed = JSON.parse(item.customs);
+                                  if (typeof parsed === 'string') parsed = JSON.parse(parsed);
+                                  if (parsed && typeof parsed === 'object') customsObj = parsed;
+                                } catch { /* malformed — ignore */ }
+                              }
+                              const activeCustoms = Object.keys(customsObj).filter((k) => customsObj[k]);
                               return (
                                 <div key={item.id} className="text-xs">
                                   <div className="flex justify-between text-brand-textPrimary font-semibold">
@@ -874,10 +940,12 @@ export default function StaffDashboard() {
                                     </span>
                                     <span className="text-zinc-500">₹{item.price * item.quantity}</span>
                                   </div>
-                                  {hasCustoms && (
-                                    <p className="text-[10px] text-brand-accent pl-4 mt-0.5">
-                                      + {Object.keys(customsObj).join(', ')}
-                                    </p>
+                                  {activeCustoms.length > 0 && (
+                                    <div className="pl-4 mt-0.5 flex flex-col gap-0.5">
+                                      {activeCustoms.map((mod) => (
+                                        <span key={mod} className="text-[10px] text-brand-accent">• {mod}</span>
+                                      ))}
+                                    </div>
                                   )}
                                   {item.notes && (
                                     <p className="text-[10px] text-zinc-500 italic pl-4 mt-0.5">
@@ -1885,3 +1953,29 @@ export default function StaffDashboard() {
     </div>
   );
 }
+
+// Standalone memoized timer component (isolates the 1-second state tick updates from re-rendering the parent dashboard).
+const OrderTimer = React.memo(({ time }: { time: string }) => {
+  const [seconds, setSeconds] = useState(0);
+
+  useEffect(() => {
+    const start = new Date(time).getTime();
+    setSeconds(Math.floor((Date.now() - start) / 1000));
+
+    const interval = setInterval(() => {
+      setSeconds(Math.floor((Date.now() - start) / 1000));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [time]);
+
+  const mm = Math.floor(seconds / 60);
+  const ss = seconds % 60;
+  return (
+    <span className="flex items-center gap-1 font-mono text-brand-accent text-xs">
+      <Clock className="w-3.5 h-3.5" />
+      {mm}:{ss.toString().padStart(2, '0')}
+    </span>
+  );
+});
+
+OrderTimer.displayName = 'OrderTimer';
