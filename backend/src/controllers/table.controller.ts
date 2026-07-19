@@ -91,11 +91,18 @@ export const verifyTableToken = async (req: Request, res: Response) => {
 
     let customerToken = '';
 
-    if (session) {
-      customerToken = session.token || '';
+    // Validate existing session token if present
+    if (session && session.token) {
+      try {
+        jwt.verify(session.token, secret);
+        customerToken = session.token;
+      } catch {
+        // Stored session token is expired or invalid; regenerate below
+        customerToken = '';
+      }
     }
 
-    if (!session || !customerToken) {
+    if (!session) {
       session = await prisma.tableSession.create({
         data: {
           tableId: table.id,
@@ -104,7 +111,9 @@ export const verifyTableToken = async (req: Request, res: Response) => {
           token: '',
         },
       });
+    }
 
+    if (!customerToken) {
       customerToken = jwt.sign(
         {
           role: 'CUSTOMER',
