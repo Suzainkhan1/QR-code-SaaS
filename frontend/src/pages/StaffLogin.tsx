@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Coffee, ArrowRight, ShieldCheck, Mail, Lock, Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '../shared/hooks/useAuth';
-import { API_URL } from '../config/api';
+import { API_URL } from '../shared/config/api';
 
 export default function StaffLogin() {
   const navigate = useNavigate();

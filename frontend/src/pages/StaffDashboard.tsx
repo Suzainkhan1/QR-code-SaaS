@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  LayoutDashboard,
   Utensils,
   Receipt,
   Grid,
@@ -17,18 +16,12 @@ import {
   AlertTriangle,
   Clock,
   Printer,
-  ChevronRight,
-  TrendingUp,
-  X,
   Plus,
   Trash2,
-  DollarSign,
-  UserPlus,
   RefreshCw,
 } from 'lucide-react';
-import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { useAuth } from '../shared/hooks/useAuth';
-import { API_URL } from '../config/api';
+import { API_URL } from '../shared/config/api';
 import { socketService } from '../shared/services/socket';
 import ThemeToggle from '../shared/components/ThemeToggle';
 import AnalyticsView from './dashboard/AnalyticsView';

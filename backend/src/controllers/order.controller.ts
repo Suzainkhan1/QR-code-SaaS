@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { prisma } from '../config/db';
+import { prisma, withDbRetry } from '../config/db';
 import { OrderStatus, TableStatus } from '@prisma/client';
 import { AuthenticatedRequest } from '../middleware/auth';
 import { notifyStaff, notifyOrderUpdate } from '../socket';
@@ -103,17 +103,28 @@ export const createOrder = async (req: AuthenticatedRequest, res: Response) => {
     const shortId = `#${(1001 + orderCountToday).toString()}`;
 
     // Transaction to create order, update inventory, and update table status
-    const order = await prisma.$transaction(async (tx) => {
-      // 1. Deduct ingredient stock based on Recipe/BOM
-      for (const item of orderItemsToCreate) {
+    const order = await withDbRetry(async () => {
+      return prisma.$transaction(async (tx) => {
+        // 1. Batched ingredient stock deduction based on Recipe/BOM
+        const menuItemIds = orderItemsToCreate.map((item) => item.menuItemId);
         const recipeIngredients = await tx.menuItemIngredient.findMany({
-          where: { menuItemId: item.menuItemId },
+          where: { menuItemId: { in: menuItemIds } },
         });
 
-        for (const recipe of recipeIngredients) {
-          const qtyToDeduct = recipe.quantityUsed * item.quantity;
+        // Aggregate required deductions per ingredientId
+        const ingredientDeductions: Record<string, number> = {};
+        for (const item of orderItemsToCreate) {
+          const itemRecipes = recipeIngredients.filter((r) => r.menuItemId === item.menuItemId);
+          for (const recipe of itemRecipes) {
+            const qtyToDeduct = recipe.quantityUsed * item.quantity;
+            ingredientDeductions[recipe.ingredientId] = (ingredientDeductions[recipe.ingredientId] || 0) + qtyToDeduct;
+          }
+        }
+
+        // Concurrently dispatch ingredient inventory updates
+        const updatePromises = Object.entries(ingredientDeductions).map(async ([ingredientId, qtyToDeduct]) => {
           const updatedIngredient = await tx.inventoryItem.update({
-            where: { id: recipe.ingredientId },
+            where: { id: ingredientId },
             data: {
               quantity: {
                 decrement: qtyToDeduct,
@@ -131,42 +142,44 @@ export const createOrder = async (req: AuthenticatedRequest, res: Response) => {
               unit: updatedIngredient.unit,
             });
           }
-        }
-      }
+        });
 
-      // 2. Create the order
-      const dbOrder = await tx.order.create({
-        data: {
-          shortId,
-          status: OrderStatus.PENDING,
-          tableId,
-          restaurantId,
-          totalAmount: subTotal,
-          taxAmount,
-          grandTotal,
-          notes,
-          sessionId: activeSessionId,
-          items: {
-            create: orderItemsToCreate,
-          },
-        },
-        include: {
-          table: true,
-          items: {
-            include: {
-              menuItem: true,
+        await Promise.all(updatePromises);
+
+        // 2. Create the order
+        const dbOrder = await tx.order.create({
+          data: {
+            shortId,
+            status: OrderStatus.PENDING,
+            tableId,
+            restaurantId,
+            totalAmount: subTotal,
+            taxAmount,
+            grandTotal,
+            notes,
+            sessionId: activeSessionId,
+            items: {
+              create: orderItemsToCreate,
             },
           },
-        },
-      });
+          include: {
+            table: true,
+            items: {
+              include: {
+                menuItem: true,
+              },
+            },
+          },
+        });
 
-      // 3. Mark Table status as OCCUPIED
-      await tx.table.update({
-        where: { id: tableId },
-        data: { status: TableStatus.OCCUPIED },
-      });
+        // 3. Mark Table status as OCCUPIED
+        await tx.table.update({
+          where: { id: tableId },
+          data: { status: TableStatus.OCCUPIED },
+        });
 
-      return dbOrder;
+        return dbOrder;
+      });
     });
 
     // Write activity log

@@ -1,5 +1,4 @@
 /**
- * Centralized API and Socket server URL configuration.
- * Uses environment variable with a safe local development fallback.
+ * Re-export centralized API configuration from shared directory.
  */
-export const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+export { API_URL } from '../shared/config/api';

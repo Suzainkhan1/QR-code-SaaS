@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 import {
   Search,
@@ -17,7 +17,7 @@ import {
 import { useCart } from '../shared/hooks/useCart';
 import { socketService } from '../shared/services/socket';
 import ThemeToggle from '../shared/components/ThemeToggle';
-import { API_URL } from '../config/api';
+import { API_URL } from '../shared/config/api';
 
 
 
@@ -147,20 +147,46 @@ export default function CustomerMenu() {
   }, [tableNumber]);
 
   // Connect socket if we have an active order to track
-  useEffect(() => {
-    if (activeOrder) {
-      const socket = socketService.connect();
-      socketService.joinOrderRoom(activeOrder.id);
+  const activeOrderId = activeOrder?.id;
 
-      socket.on('order:status_change', (data: { status: string }) => {
+  useEffect(() => {
+    if (activeOrderId) {
+      const socket = socketService.connect();
+      socketService.joinOrderRoom(activeOrderId);
+
+      const handleStatusChange = (data: { status: string }) => {
         setActiveOrder((prev: any) => (prev ? { ...prev, status: data.status } : null));
-      });
+      };
+
+      socket.on('order:status_change', handleStatusChange);
 
       return () => {
-        socket.off('order:status_change');
+        socket.off('order:status_change', handleStatusChange);
       };
     }
-  }, [activeOrder]);
+  }, [activeOrderId]);
+
+  // Filter products memoization (must be called unconditionally at top level)
+  const filteredItems = useMemo(() => {
+    let list: MenuItem[] = [];
+    const cat = categories.find((c) => c.id === activeCategory);
+    if (cat) {
+      list = cat.items;
+    }
+
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      list = list.filter((item) => item.name.toLowerCase().includes(q));
+    }
+
+    if (vegFilter === 'VEG') {
+      list = list.filter((item) => item.isVeg);
+    } else if (vegFilter === 'NON_VEG') {
+      list = list.filter((item) => !item.isVeg);
+    }
+
+    return list;
+  }, [categories, activeCategory, searchQuery, vegFilter]);
 
   if (loading) {
     return (
@@ -289,8 +315,9 @@ export default function CustomerMenu() {
       })),
     };
 
-    try {
-      const customerToken = sessionStorage.getItem('customerToken');
+    const customerToken = sessionStorage.getItem('customerToken');
+
+    const submitOrderRequest = async () => {
       const res = await fetch(`${API_URL}/api/public/orders`, {
         method: 'POST',
         headers: {
@@ -301,15 +328,37 @@ export default function CustomerMenu() {
       });
 
       if (!res.ok) {
-        throw new Error('Checkout failed');
+        const data = await res.json().catch(() => ({}));
+        const errObj: any = new Error(data.error || 'Checkout failed');
+        errObj.status = res.status;
+        errObj.reason = data.reason;
+        throw errObj;
       }
 
-      const data = await res.json();
+      return res.json();
+    };
+
+    try {
+      let data;
+      try {
+        data = await submitOrderRequest();
+      } catch (firstErr: any) {
+        if (firstErr.status === 403 || firstErr.status === 401) {
+          throw firstErr;
+        }
+        console.warn('[Order] First attempt failed, retrying once...', firstErr);
+        data = await submitOrderRequest();
+      }
+
       setActiveOrder(data.order);
       clearCart();
       setIsCartOpen(false);
-    } catch (err) {
-      alert('Failed to place order. Try again.');
+    } catch (err: any) {
+      if (err.status === 403 || err.status === 401 || err.reason === 'TOKEN_EXPIRED') {
+        alert('Your session has expired. Please rescan the QR code on your table to place your order.');
+      } else {
+        alert(err.message || 'Failed to place order. Please try again.');
+      }
     } finally {
       setPlacingOrder(false);
     }
@@ -418,26 +467,7 @@ export default function CustomerMenu() {
     );
   }
 
-  // Filter products
-  const getFilteredItems = () => {
-    let list: MenuItem[] = [];
-    const cat = categories.find((c) => c.id === activeCategory);
-    if (cat) {
-      list = cat.items;
-    }
 
-    if (searchQuery) {
-      list = list.filter((item) => item.name.toLowerCase().includes(searchQuery.toLowerCase()));
-    }
-
-    if (vegFilter === 'VEG') {
-      list = list.filter((item) => item.isVeg);
-    } else if (vegFilter === 'NON_VEG') {
-      list = list.filter((item) => !item.isVeg);
-    }
-
-    return list;
-  };
 
   return (
     <div className="min-h-screen bg-brand-dark text-brand-textPrimary pb-24">
@@ -448,6 +478,8 @@ export default function CustomerMenu() {
             <img
               src={restaurant.logo}
               alt="Logo"
+              loading="lazy"
+              decoding="async"
               className="w-10 h-10 object-cover rounded-lg border border-zinc-700"
             />
           )}
@@ -549,7 +581,7 @@ export default function CustomerMenu() {
 
       {/* 4. Products List Grid */}
       <div className="px-4 mt-2 flex flex-col gap-4">
-        {getFilteredItems().map((item) => (
+        {filteredItems.map((item) => (
           <div
             key={item.id}
             className={`glass-panel p-3 rounded-2xl flex gap-3 relative overflow-hidden transition-all ${
@@ -560,6 +592,8 @@ export default function CustomerMenu() {
               <img
                 src={item.image}
                 alt={item.name}
+                loading="lazy"
+                decoding="async"
                 className="w-20 h-20 object-cover rounded-xl border border-zinc-800"
               />
             )}
@@ -618,7 +652,7 @@ export default function CustomerMenu() {
           </div>
         ))}
 
-        {getFilteredItems().length === 0 && (
+        {filteredItems.length === 0 && (
           <div className="text-center py-12 text-zinc-600 flex flex-col items-center gap-2">
             <Coffee className="w-8 h-8 opacity-40" />
             <p className="text-xs">No items found matching your filters</p>
@@ -679,7 +713,7 @@ export default function CustomerMenu() {
 
                       <div>
                         <span className="text-[10px] text-zinc-500 uppercase font-bold block mb-2">Choose Coating Flavor</span>
-                        <div className="grid grid-cols-3 gap-2">
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                           {flavors.map((fl) => (
                             <button
                               type="button"

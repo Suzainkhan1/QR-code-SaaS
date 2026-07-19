@@ -21,6 +21,7 @@ import { initSocket } from './socket';
 import { prisma } from './config/db';
 
 const app = express();
+app.set('trust proxy', 1);
 const server = http.createServer(app);
 const PORT = process.env.PORT || 5000;
 
@@ -127,6 +128,11 @@ const isDatabaseConnected = async (): Promise<boolean> => {
     return false;
   }
 };
+
+// Lightweight Keep-Alive ping endpoint for external uptime monitors (no DB query, no auth)
+app.get('/ping', (req: Request, res: Response) => {
+  return res.status(200).send('pong');
+});
 
 // Root Health Check Route
 app.get('/health', async (req: Request, res: Response) => {

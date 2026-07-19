@@ -38,8 +38,17 @@ export const authenticateJWT = (req: AuthenticatedRequest, res: Response, next: 
       sessionId: decoded.sessionId,
     };
     next();
-  } catch (error) {
-    return res.status(403).json({ error: 'Invalid or expired authentication token' });
+  } catch (error: any) {
+    if (error?.name === 'TokenExpiredError' || error instanceof jwt.TokenExpiredError) {
+      return res.status(403).json({
+        error: 'Authentication token has expired',
+        reason: 'TOKEN_EXPIRED',
+      });
+    }
+    return res.status(403).json({
+      error: 'Invalid authentication token',
+      reason: 'TOKEN_INVALID',
+    });
   }
 };
 
