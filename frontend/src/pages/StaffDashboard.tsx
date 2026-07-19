@@ -19,7 +19,10 @@ import {
   Plus,
   Trash2,
   RefreshCw,
+  Pencil,
+  X,
 } from 'lucide-react';
+import ImageUploadInput from '../shared/components/ImageUploadInput';
 import { useAuth } from '../shared/hooks/useAuth';
 import { API_URL } from '../shared/config/api';
 import { socketService } from '../shared/services/socket';
@@ -557,9 +560,110 @@ export default function StaffDashboard() {
               : cat
           )
         );
+        setEditToast(`"${d.item.name}" added to menu!`);
+        setTimeout(() => setEditToast(null), 3500);
       }
     } catch (e) {
       console.error(e);
+    }
+  };
+
+  // Edit Menu Item state & handlers
+  const [editingItem, setEditingItem] = useState<any | null>(null);
+  const [editForm, setEditForm] = useState<any>({
+    id: '',
+    name: '',
+    description: '',
+    price: '',
+    prepTime: '15',
+    isVeg: true,
+    isBestseller: false,
+    isChefSpecial: false,
+    isAvailable: true,
+    categoryId: '',
+    image: '',
+  });
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [editToast, setEditToast] = useState<string | null>(null);
+  const [isEditFormDirty, setIsEditFormDirty] = useState(false);
+
+  const handleOpenEditModal = (item: any) => {
+    setEditingItem(item);
+    setEditForm({
+      id: item.id,
+      name: item.name || '',
+      description: item.description || '',
+      price: item.price !== undefined ? String(item.price) : '',
+      prepTime: item.prepTime !== undefined ? String(item.prepTime) : '15',
+      isVeg: item.isVeg ?? true,
+      isBestseller: item.isBestseller ?? false,
+      isChefSpecial: item.isChefSpecial ?? false,
+      isAvailable: item.isAvailable ?? true,
+      categoryId: item.categoryId || (categories[0]?.id || ''),
+      image: item.image || '',
+    });
+    setIsEditFormDirty(false);
+  };
+
+  const handleCloseEditModal = () => {
+    if (isEditFormDirty) {
+      if (!window.confirm('Discard unsaved changes to this menu item?')) return;
+    }
+    setEditingItem(null);
+    setIsEditFormDirty(false);
+  };
+
+  const handleSaveEditedItem = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingItem || !editForm.name || !editForm.price || !editForm.categoryId) return;
+    setSavingEdit(true);
+
+    try {
+      const payload = {
+        name: editForm.name,
+        description: editForm.description,
+        price: parseFloat(editForm.price),
+        prepTime: editForm.prepTime ? parseInt(editForm.prepTime) : 15,
+        isVeg: editForm.isVeg,
+        isBestseller: editForm.isBestseller,
+        isChefSpecial: editForm.isChefSpecial,
+        isAvailable: editForm.isAvailable,
+        categoryId: editForm.categoryId,
+        image: editForm.image,
+      };
+
+      const res = await fetchFromAPI(`/api/menu/items/${editingItem.id}`, {
+        method: 'PUT',
+        headers: getHeaders(),
+        body: JSON.stringify(payload),
+      });
+
+      if (res.ok) {
+        const d = await res.json();
+        const updatedItem = d.item;
+
+        // Targeted updates without page reload
+        setMenuItems((prev) => prev.map((i) => (i.id === updatedItem.id ? updatedItem : i)));
+        setCategories((prev) =>
+          prev.map((cat) => ({
+            ...cat,
+            items: (cat.items || []).map((i: any) => (i.id === updatedItem.id ? updatedItem : i)),
+          }))
+        );
+
+        setEditingItem(null);
+        setIsEditFormDirty(false);
+        setEditToast(`"${updatedItem.name}" updated successfully!`);
+        setTimeout(() => setEditToast(null), 3500);
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        alert(errData.error || 'Failed to update menu item.');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Network error updating menu item.');
+    } finally {
+      setSavingEdit(false);
     }
   };
 
@@ -1323,13 +1427,10 @@ export default function StaffDashboard() {
 
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       <div className="md:col-span-2">
-                        <label className="text-[10px] text-zinc-500 uppercase block mb-1">Image URL</label>
-                        <input
-                          type="text"
-                          placeholder="https://images.unsplash.com/..."
+                        <ImageUploadInput
                           value={newItemData.image}
-                          onChange={(e) => setNewItemData({ ...newItemData, image: e.target.value })}
-                          className="w-full bg-zinc-900 border border-zinc-800 p-2 text-xs text-brand-textPrimary rounded-xl focus:outline-none"
+                          onChange={(url) => setNewItemData({ ...newItemData, image: url })}
+                          getHeaders={getHeaders}
                         />
                       </div>
                       <div>
@@ -1423,12 +1524,22 @@ export default function StaffDashboard() {
                               {item.isAvailable ? 'In Stock' : 'Out of Stock'}
                             </button>
 
-                            <button
-                              onClick={() => handleDeleteProduct(item.id)}
-                              className="text-zinc-650 hover:text-red-400 transition-all p-1"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
+                            <div className="flex items-center gap-1">
+                              <button
+                                onClick={() => handleOpenEditModal(item)}
+                                className="text-zinc-500 hover:text-brand-accent transition-all p-1 rounded hover:bg-zinc-900"
+                                title="Edit Item"
+                              >
+                                <Pencil className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteProduct(item.id)}
+                                className="text-zinc-500 hover:text-red-400 transition-all p-1 rounded hover:bg-zinc-900"
+                                title="Delete Item"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -1436,6 +1547,199 @@ export default function StaffDashboard() {
                   </div>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* ================================================================
+              EDIT MENU ITEM MODAL
+              ================================================================ */}
+          {editingItem && (
+            <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex justify-center items-center p-4">
+              <div className="w-full max-w-2xl bg-brand-card rounded-2xl border border-zinc-800 p-6 relative max-h-[90vh] overflow-y-auto animate-in zoom-in-95 duration-200">
+                <button
+                  onClick={handleCloseEditModal}
+                  className="absolute top-4 right-4 text-zinc-500 hover:text-white"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+
+                <div className="flex items-center gap-2 mb-4 pb-2 border-b border-zinc-850">
+                  <Pencil className="w-5 h-5 text-brand-accent" />
+                  <h3 className="text-base font-bold text-brand-textPrimary">Edit Menu Item</h3>
+                </div>
+
+                <form onSubmit={handleSaveEditedItem} className="flex flex-col gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <label className="text-[10px] text-zinc-400 uppercase font-bold block mb-1">Item Name *</label>
+                      <input
+                        type="text"
+                        required
+                        value={editForm.name}
+                        onChange={(e) => {
+                          setEditForm({ ...editForm, name: e.target.value });
+                          setIsEditFormDirty(true);
+                        }}
+                        className="w-full bg-zinc-900 border border-zinc-800 p-2 text-xs text-brand-textPrimary rounded-xl focus:outline-none focus:border-brand-accent"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-zinc-400 uppercase font-bold block mb-1">Price (₹) *</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        required
+                        value={editForm.price}
+                        onChange={(e) => {
+                          setEditForm({ ...editForm, price: e.target.value });
+                          setIsEditFormDirty(true);
+                        }}
+                        className="w-full bg-zinc-900 border border-zinc-800 p-2 text-xs text-brand-textPrimary rounded-xl focus:outline-none focus:border-brand-accent"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-zinc-400 uppercase font-bold block mb-1">Category *</label>
+                      <select
+                        value={editForm.categoryId}
+                        onChange={(e) => {
+                          setEditForm({ ...editForm, categoryId: e.target.value });
+                          setIsEditFormDirty(true);
+                        }}
+                        className="w-full bg-zinc-900 border border-zinc-800 p-2 text-xs text-brand-textPrimary rounded-xl focus:outline-none focus:border-brand-accent"
+                      >
+                        {categories.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="md:col-span-2">
+                      <ImageUploadInput
+                        value={editForm.image}
+                        onChange={(url) => {
+                          setEditForm({ ...editForm, image: url });
+                          setIsEditFormDirty(true);
+                        }}
+                        getHeaders={getHeaders}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-zinc-400 uppercase font-bold block mb-1">Prep Time (min)</label>
+                      <input
+                        type="number"
+                        value={editForm.prepTime}
+                        onChange={(e) => {
+                          setEditForm({ ...editForm, prepTime: e.target.value });
+                          setIsEditFormDirty(true);
+                        }}
+                        className="w-full bg-zinc-900 border border-zinc-800 p-2 text-xs text-brand-textPrimary rounded-xl focus:outline-none focus:border-brand-accent"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] text-zinc-400 uppercase font-bold block mb-1">Description</label>
+                    <textarea
+                      rows={2}
+                      value={editForm.description}
+                      onChange={(e) => {
+                        setEditForm({ ...editForm, description: e.target.value });
+                        setIsEditFormDirty(true);
+                      }}
+                      className="w-full bg-zinc-900 border border-zinc-800 p-2 text-xs text-brand-textPrimary rounded-xl focus:outline-none focus:border-brand-accent resize-none"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 bg-zinc-900/60 p-3 rounded-xl border border-zinc-850">
+                    <label className="flex items-center gap-2 text-xs text-brand-textSecondary cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={editForm.isVeg}
+                        onChange={(e) => {
+                          setEditForm({ ...editForm, isVeg: e.target.checked });
+                          setIsEditFormDirty(true);
+                        }}
+                        className="accent-brand-accent rounded"
+                      />
+                      Vegetarian
+                    </label>
+
+                    <label className="flex items-center gap-2 text-xs text-brand-textSecondary cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={editForm.isAvailable}
+                        onChange={(e) => {
+                          setEditForm({ ...editForm, isAvailable: e.target.checked });
+                          setIsEditFormDirty(true);
+                        }}
+                        className="accent-brand-accent rounded"
+                      />
+                      In Stock
+                    </label>
+
+                    <label className="flex items-center gap-2 text-xs text-brand-textSecondary cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={editForm.isBestseller}
+                        onChange={(e) => {
+                          setEditForm({ ...editForm, isBestseller: e.target.checked });
+                          setIsEditFormDirty(true);
+                        }}
+                        className="accent-brand-accent rounded"
+                      />
+                      Bestseller
+                    </label>
+
+                    <label className="flex items-center gap-2 text-xs text-brand-textSecondary cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={editForm.isChefSpecial}
+                        onChange={(e) => {
+                          setEditForm({ ...editForm, isChefSpecial: e.target.checked });
+                          setIsEditFormDirty(true);
+                        }}
+                        className="accent-brand-accent rounded"
+                      />
+                      Chef Special
+                    </label>
+                  </div>
+
+                  <div className="flex justify-end gap-3 mt-4 pt-3 border-t border-zinc-850">
+                    <button
+                      type="button"
+                      onClick={handleCloseEditModal}
+                      className="px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 font-semibold text-xs rounded-xl border border-zinc-800"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={savingEdit}
+                      className="px-6 py-2 bg-brand-accent hover:bg-brand-accentHover text-brand-dark font-bold text-xs rounded-xl shadow-md flex items-center gap-2"
+                    >
+                      {savingEdit ? (
+                        <>
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Saving...
+                        </>
+                      ) : (
+                        'Save Changes'
+                      )}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {/* Toast Notification Banner */}
+          {editToast && (
+            <div className="fixed bottom-6 right-6 z-50 bg-emerald-600 text-white text-xs font-bold px-4 py-3 rounded-xl shadow-2xl flex items-center gap-2 animate-in slide-in-from-bottom duration-300">
+              <CheckCircle className="w-4 h-4" />
+              {editToast}
             </div>
           )}
 

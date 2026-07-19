@@ -26,6 +26,7 @@ import { getInventory, addIngredient, updateIngredient, deleteIngredient } from 
 import { getExpenses, addExpense, deleteExpense } from '../controllers/expense.controller';
 import { getSettings, updateSettings } from '../controllers/settings.controller';
 import { getActivityLogs } from '../controllers/log.controller';
+import { uploadSingleImage } from './upload.routes';
 
 const router = Router();
 
@@ -541,6 +542,31 @@ router.post('/menu/items', authenticateJWT, requireRoles(Role.OWNER, Role.MANAGE
  */
 router.put('/menu/items/:id', authenticateJWT, requireRoles(Role.OWNER, Role.MANAGER), validateBody(menuItemSchema), updateItem);
 router.delete('/menu/items/:id', authenticateJWT, requireRoles(Role.OWNER), deleteItem);
+
+/**
+ * @openapi
+ * /api/upload:
+ *   post:
+ *     summary: Upload an image file (Owner/Manager only)
+ *     tags: [Menu]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Image uploaded successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 url:
+ *                   type: string
+ *                 filename:
+ *                   type: string
+ */
+router.post('/upload', authenticateJWT, requireRoles(Role.OWNER, Role.MANAGER), uploadSingleImage);
 
 // ==========================================
 // 4. TABLE MANAGEMENT
